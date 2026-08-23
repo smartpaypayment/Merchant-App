@@ -1,20 +1,16 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { AppProviders } from '@app/providers/AppProviders';
+import { RootNavigator } from '@app/navigation/RootNavigator';
 
+/**
+ * App entry. Providers wrap navigation so `RootNavigator` can read the query
+ * client and localized strings while deciding which branch to mount.
+ */
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <AppProviders>
+      <StatusBar style="dark" />
+      <RootNavigator />
+    </AppProviders>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

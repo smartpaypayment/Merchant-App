@@ -1,6 +1,38 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
-  }
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": false,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    // `baseUrl` is deprecated in TS 6 but Expo's Metro `tsconfigPaths` resolver
+    // still reads it to resolve the `@/*` aliases at bundle time, so it stays
+    // until Expo's resolver supports bare `paths`.
+    "ignoreDeprecations": "6.0",
+    // Declared explicitly: Expo's base config uses `moduleDetection: "force"`,
+    // which stops the Jest globals in @types/jest from being picked up
+    // automatically, so `tsc --noEmit` would fail on the test files.
+    "types": ["jest", "node", "react"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@api/*": ["src/api/*"],
+      "@app/*": ["src/app/*"],
+      "@components/*": ["src/components/*"],
+      "@features/*": ["src/features/*"],
+      "@hooks/*": ["src/hooks/*"],
+      "@models/*": ["src/models/*"],
+      "@store/*": ["src/store/*"],
+      "@theme/*": ["src/theme/*"],
+      "@utils/*": ["src/utils/*"],
+      "@localization/*": ["src/localization/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
+  "exclude": ["node_modules"]
 }

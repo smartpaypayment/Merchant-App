@@ -1,0 +1,192 @@
+import type { ISODate, Paise, PaymentMode, Transaction, TxnStatus, UUID } from './index';
+
+/* -------------------------------------------------------------------------- */
+/* Errors — Section 9: "Standard error shape: { code, message, details? }"     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Machine-readable error codes. Each maps to an i18n key under `errors.*` so the
+ * user never sees a raw server string (Section 9 + Section 13).
+ */
+export type ApiErrorCode =
+  | 'network_error'
+  | 'timeout'
+  | 'offline'
+  | 'unauthorized'
+  | 'forbidden'
+  | 'not_found'
+  | 'validation_error'
+  | 'rate_limited'
+  | 'invalid_otp'
+  | 'otp_expired'
+  | 'invalid_mobile'
+  | 'kyc_incomplete'
+  | 'kyc_rejected'
+  | 'bank_verification_failed'
+  | 'pan_verification_failed'
+  | 'already_refunded'
+  | 'refund_limit_exceeded'
+  | 'payment_expired'
+  | 'server_error'
+  | 'unknown';
+
+export interface ApiErrorShape {
+  code: ApiErrorCode;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Auth — POST /auth/otp/request, /auth/otp/verify, /auth/refresh             */
+/* -------------------------------------------------------------------------- */
+
+export interface OtpRequestPayload {
+  mobile: string;
+}
+
+export interface OtpRequestResponse {
+  /** Server-declared resend window; the UI counts down from this. */
+  resendAfterSeconds: number;
+  /** Echoed back so the OTP screen can display the masked target. */
+  mobile: string;
+}
+
+export interface OtpVerifyPayload {
+  mobile: string;
+  otp: string;
+}
+
+export interface OtpVerifyResponse {
+  accessToken: string;
+  refreshToken: string;
+  isNewUser: boolean;
+}
+
+export interface RefreshPayload {
+  refreshToken: string;
+}
+
+export interface RefreshResponse {
+  accessToken: string;
+  refreshToken: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Payments                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export interface StaticQrResponse {
+  /** Raw UPI intent string to encode into the QR image. */
+  qrPayload: string;
+  vpa: string;
+  merchantName: string;
+}
+
+export interface DynamicQrPayload {
+  /** paise */
+  amount: Paise;
+  note?: string;
+}
+
+export interface DynamicQrResponse {
+  ref: string;
+  qrPayload: string;
+  expiresAt: ISODate;
+}
+
+export interface PaymentStatusResponse {
+  ref: string;
+  status: TxnStatus | 'expired';
+  /** Present once the payment lands. */
+  transaction?: Transaction;
+}
+
+export interface PaymentLinkPayload {
+  /** paise */
+  amount: Paise;
+  note?: string;
+}
+
+export interface PaymentLinkResponse {
+  url: string;
+  ref: string;
+  expiresAt: ISODate;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Transactions — cursor pagination per Section 6.8                           */
+/* -------------------------------------------------------------------------- */
+
+export type TransactionFilter = 'all' | 'success' | 'pending' | 'failed' | 'refunded';
+
+export interface TransactionQuery {
+  filter?: TransactionFilter;
+  search?: string;
+  from?: ISODate;
+  to?: ISODate;
+  cursor?: string | null;
+  limit?: number;
+}
+
+export interface Paginated<T> {
+  items: T[];
+  /** `null` when there are no further pages. */
+  nextCursor: string | null;
+}
+
+export interface RefundPayload {
+  /** paise; must be <= original amount minus already-refunded */
+  amount: Paise;
+  reason?: string;
+}
+
+export interface RefundResponse {
+  refundId: UUID;
+  transactionId: UUID;
+  amount: Paise;
+  status: 'processing' | 'success' | 'failed';
+  createdAt: ISODate;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reports — GET /reports?from=&to=                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface ReportSeriesPoint {
+  date: ISODate;
+  /** paise */
+  amount: Paise;
+  count: number;
+}
+
+export interface ReportsResponse {
+  from: ISODate;
+  to: ISODate;
+  totalSales: Paise;
+  txnCount: number;
+  /** paise */
+  avgTicketSize: Paise;
+  topPaymentMode: PaymentMode;
+  series: ReportSeriesPoint[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Support                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+export interface SupportTicket {
+  id: UUID;
+  subject: string;
+  body: string;
+  status: TicketStatus;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+}
+
+export interface CreateTicketPayload {
+  subject: string;
+  body: string;
+  category?: string;
+}

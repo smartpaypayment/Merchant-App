@@ -1,25 +1,40 @@
 {
   "expo": {
-    "name": "merchant-app",
+    "name": "MerchantOne",
     "slug": "merchant-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "merchantone",
     "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0B5FFF",
+      "resizeMode": "contain"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.merchantone.app"
     },
     "android": {
+      "package": "com.merchantone.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0B5FFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["android.permission.CAMERA", "android.permission.VIBRATE", "android.permission.INTERNET"]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": ["expo-secure-store", "expo-localization", "expo-audio"],
+    "extra": {
+      "apiBaseUrl": "https://api.merchantone.in/v1",
+      "useMockApi": true
     }
   }
 }
