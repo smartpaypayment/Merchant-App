@@ -27,15 +27,19 @@ export function QuickActionsRow() {
       key: 'myQr',
       labelKey: 'home.quickActions.myQr',
       icon: 'qr-code-outline',
+      // Straight to the static QR: this is the one-tap "show my code" path.
       onPress: () =>
-        navigation.navigate('Main', { screen: 'Collect', params: { screen: 'CollectPayment' } }),
+        navigation.navigate('Main', { screen: 'Collect', params: { screen: 'StaticQR' } }),
     },
     {
       key: 'paymentLink',
       labelKey: 'home.quickActions.paymentLink',
       icon: 'link-outline',
       onPress: () =>
-        navigation.navigate('Main', { screen: 'Collect', params: { screen: 'CollectPayment' } }),
+        navigation.navigate('Main', {
+          screen: 'Collect',
+          params: { screen: 'AmountEntry', params: { mode: 'link' } },
+        }),
     },
     {
       key: 'reports',

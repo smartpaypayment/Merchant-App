@@ -1,7 +1,7 @@
 import { authApi, dashboardApi, merchantApi, paymentsApi, transactionsApi } from '@api/index';
 import { ApiError } from '@api/errors';
 import { clearTokens, getAccessToken, saveTokens } from '@store/secureStorage';
-import { EXISTING_MERCHANT_MOBILE, VALID_OTP } from '@api/mocks/db';
+import { EXISTING_MERCHANT_MOBILE, PROGRESSIVE_KYC_DAILY_LIMIT, VALID_OTP } from '@api/mocks/db';
 import { KycStep } from '@models/kyc';
 import type { Paise } from '@models/index';
 
@@ -275,5 +275,130 @@ describe('dynamic QR payment lifecycle (Section 6.6 / 10)', () => {
 
     const status = await paymentsApi.getPaymentStatus(qr.ref);
     expect(status.status).toBe('pending');
+  });
+
+  it('transitions pending -> success and returns the matching transaction', async () => {
+    const amount = 75_000; // ₹750.00
+    const qr = await paymentsApi.createDynamicQr({ amount });
+
+    // Drive the same poll loop the QR screen runs (Section 10, step 2).
+    const deadline = Date.now() + 20_000;
+    let status = await paymentsApi.getPaymentStatus(qr.ref);
+
+    while (status.status === 'pending' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      status = await paymentsApi.getPaymentStatus(qr.ref);
+    }
+
+    expect(status.status).toBe('success');
+    expect(status.transaction).toBeDefined();
+
+    const txn = status.transaction!;
+    // The credited amount must match the requested paise exactly.
+    expect(txn.amount).toBe(amount);
+    expect(Number.isInteger(txn.amount)).toBe(true);
+    expect(txn.mode).toBe('upi_qr');
+    // Zero-MDR on UPI P2M, so the merchant nets the full amount.
+    expect(txn.fee).toBe(0);
+    expect(txn.netAmount).toBe(amount);
+    expect(txn.utr).toBeTruthy();
+  });
+
+  it('reports the same terminal status on repeat polls (idempotent)', async () => {
+    const qr = await paymentsApi.createDynamicQr({ amount: 10_000 });
+
+    const deadline = Date.now() + 20_000;
+    let status = await paymentsApi.getPaymentStatus(qr.ref);
+    while (status.status === 'pending' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      status = await paymentsApi.getPaymentStatus(qr.ref);
+    }
+    expect(status.status).toBe('success');
+
+    // Section 10 item 4: a duplicate/late event must not create a second payment.
+    const again = await paymentsApi.getPaymentStatus(qr.ref);
+    expect(again.status).toBe('success');
+    expect(again.transaction?.id).toBe(status.transaction?.id);
+  });
+
+  it('surfaces the payment received on the dashboard summary', async () => {
+    const before = await dashboardApi.getDashboardSummary();
+
+    const amount = 33_300; // ₹333.00
+    const qr = await paymentsApi.createDynamicQr({ amount });
+
+    const deadline = Date.now() + 20_000;
+    let status = await paymentsApi.getPaymentStatus(qr.ref);
+    while (status.status === 'pending' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      status = await paymentsApi.getPaymentStatus(qr.ref);
+    }
+    expect(status.status).toBe('success');
+
+    const after = await dashboardApi.getDashboardSummary();
+    expect(after.todayCollected).toBe(before.todayCollected + amount);
+    expect(after.todayTxnCount).toBe(before.todayTxnCount + 1);
+    // The new payment should head the recent list.
+    expect(after.recentTransactions[0]?.id).toBe(status.transaction?.id);
+  });
+
+  it('rejects a dynamic QR above the progressive-KYC cap', async () => {
+    // Switch to an unapproved merchant.
+    const tokens = await authApi.verifyOtp({ mobile: '9000000003', otp: VALID_OTP });
+    await saveTokens(tokens);
+
+    const error = await paymentsApi
+      .createDynamicQr({ amount: PROGRESSIVE_KYC_DAILY_LIMIT + 100 })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe('kyc_incomplete');
+    expect((error as ApiError).details?.['limit']).toBe(PROGRESSIVE_KYC_DAILY_LIMIT);
+  });
+});
+
+describe('payment link (Section 6.6 mode C)', () => {
+  beforeEach(async () => {
+    const tokens = await authApi.verifyOtp({ mobile: EXISTING_MERCHANT_MOBILE, otp: VALID_OTP });
+    await saveTokens(tokens);
+  });
+
+  it('returns a shareable url with a 24h expiry', async () => {
+    const link = await paymentsApi.createPaymentLink({ amount: 1_50_000, note: 'Catering' });
+
+    expect(link.url).toMatch(/^https:\/\//);
+    expect(link.ref).toBeTruthy();
+
+    const hoursUntilExpiry = (new Date(link.expiresAt).getTime() - Date.now()) / 3_600_000;
+    expect(hoursUntilExpiry).toBeGreaterThan(23);
+    expect(hoursUntilExpiry).toBeLessThanOrEqual(24);
+  });
+
+  it('rejects a zero or negative amount', async () => {
+    await expect(paymentsApi.createPaymentLink({ amount: 0 })).rejects.toMatchObject({
+      code: 'validation_error',
+    });
+  });
+});
+
+describe('static QR (Section 6.6 mode A)', () => {
+  it('returns a payload with no amount, so any sum can be paid', async () => {
+    const tokens = await authApi.verifyOtp({ mobile: EXISTING_MERCHANT_MOBILE, otp: VALID_OTP });
+    await saveTokens(tokens);
+
+    const qr = await merchantApi.getStaticQr();
+
+    expect(qr.vpa).toBeTruthy();
+    expect(qr.qrPayload).toContain(`pa=${qr.vpa}`);
+    // A static QR must NOT pin an amount.
+    expect(qr.qrPayload).not.toContain('am=');
+  });
+
+  it('refuses a static QR before a VPA has been issued', async () => {
+    const tokens = await authApi.verifyOtp({ mobile: '9000000004', otp: VALID_OTP });
+    await saveTokens(tokens);
+
+    const error = await merchantApi.getStaticQr().catch((e: unknown) => e);
+    expect((error as ApiError).code).toBe('kyc_incomplete');
   });
 });
