@@ -13,7 +13,7 @@ Runs **end-to-end against an in-memory mock backend**, so no live API is require
 | 3 | Onboarding / KYC wizard | ✅ Complete |
 | 4 | Home dashboard | ✅ Complete |
 | 5 | Collect payment (static/dynamic QR, status, success + audio) | ✅ Complete |
-| 6 | Transactions list + detail + refund | ⬜ Navigable placeholder |
+| 6 | Transactions list + detail + refund | ✅ Complete |
 | 7 | Settlements list + detail | ⬜ Navigable placeholder |
 | 8 | Reports | ⬜ Navigable placeholder |
 | 9 | Profile, settings, staff, support, notifications | 🟡 Notifications done; rest placeholder |
@@ -34,7 +34,7 @@ Verification:
 
 ```bash
 npm run typecheck     # tsc --noEmit, strict
-npm test              # 60 tests
+npm test              # 96 tests
 npm run bundle:check  # production Android bundle
 ```
 
@@ -78,6 +78,16 @@ compile error rather than a runtime fallback. All 8 bundles are at key parity.
 
 **Security.** Tokens live in `expo-secure-store` (Keystore/Keychain); the Aadhaar
 number is held in component state only and never written to the KYC draft.
+
+**Re-auth for money movement.** Refunds are gated behind `ReauthSheet` (biometric,
+falling back to an app PIN). The mutation only runs from the sheet's success
+callback, so no single tap can move money. The PIN is stored as
+`SHA-256(salt : pin)` with a per-PIN 16-byte salt, and guessing is capped at 5
+attempts. The limitation is stated plainly in `appLock.ts`: one SHA-256 pass is not
+a password KDF, and a 4-6 digit keyspace falls instantly to anyone who extracts
+the record — what actually protects it is the hardware-backed keystore. A
+production build should use a stretched KDF or have the PIN unwrap a
+StrongBox-backed key.
 
 **Payment status.** `usePaymentStatus` implements the §10 hybrid: poll every ~2.5s
 while the QR is visible, stop dead on any terminal status, and dedupe by ref so a

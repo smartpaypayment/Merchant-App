@@ -12,6 +12,8 @@ import { DynamicQRScreen } from '@features/collect/DynamicQRScreen';
 import { PaymentLinkScreen } from '@features/collect/PaymentLinkScreen';
 import { PaymentSuccessScreen } from '@features/collect/PaymentSuccessScreen';
 import { TransactionsListScreen } from '@features/transactions/TransactionsListScreen';
+import { TransactionDetailScreen } from '@features/transactions/TransactionDetailScreen';
+import { RefundScreen } from '@features/refunds/RefundScreen';
 import { SettlementsListScreen } from '@features/settlements/SettlementsListScreen';
 import { MoreMenuScreen } from '@features/profile/MoreMenuScreen';
 import type {
@@ -56,6 +58,14 @@ function TransactionsNavigator() {
   return (
     <TransactionsStack.Navigator screenOptions={{ headerShown: false }}>
       <TransactionsStack.Screen name="TransactionsList" component={TransactionsListScreen} />
+      <TransactionsStack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
+      <TransactionsStack.Screen
+        name="Refund"
+        component={RefundScreen}
+        // No swipe-back mid-refund: an accidental edge swipe while the re-auth
+        // sheet is open should not silently abandon a money movement.
+        options={{ gestureEnabled: false }}
+      />
     </TransactionsStack.Navigator>
   );
 }
