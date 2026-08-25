@@ -14,7 +14,7 @@ Runs **end-to-end against an in-memory mock backend**, so no live API is require
 | 4 | Home dashboard | ✅ Complete |
 | 5 | Collect payment (static/dynamic QR, status, success + audio) | ✅ Complete |
 | 6 | Transactions list + detail + refund | ✅ Complete |
-| 7 | Settlements list + detail | ⬜ Navigable placeholder |
+| 7 | Settlements list + detail | ✅ Complete |
 | 8 | Reports | ⬜ Navigable placeholder |
 | 9 | Profile, settings, staff, support, notifications | 🟡 Notifications done; rest placeholder |
 | 10 | Offline handling, security hardening, tests | 🟡 Foundations in place |
@@ -34,7 +34,7 @@ Verification:
 
 ```bash
 npm run typecheck     # tsc --noEmit, strict
-npm test              # 96 tests
+npm test              # 146 tests
 npm run bundle:check  # production Android bundle
 ```
 
@@ -78,6 +78,21 @@ compile error rather than a runtime fallback. All 8 bundles are at key parity.
 
 **Security.** Tokens live in `expo-secure-store` (Keystore/Keychain); the Aadhaar
 number is held in component state only and never written to the KYC draft.
+
+**Settlement statements are CSV, not PDF — deliberately.** CSV opens in Excel and
+Google Sheets, which is what actually gets reconciled against a bank statement. A
+compliant PDF statement carries registered entity details, GSTIN and a fee
+breakdown that must match the platform's system of record for an audit, so it has
+to be rendered server-side and fetched as a signed URL rather than assembled on
+device where it could drift. `shareStatement` is the seam for that. The CSV writer
+also neutralises leading `=`/`+`/`-`/`@` so a payer-supplied note can't become an
+Excel formula — these files get opened by accountants.
+
+**Instant settlement fees are fetched, never computed client-side.** The quote
+endpoint returns net, fee, GST-on-fee and payout, and the UI renders all four. That
+keeps pricing a backend concern and makes §4.4's fee transparency literal. The
+arithmetic guarantees `payout + totalFee === net` exactly, so the breakdown always
+reconciles against the bank credit.
 
 **Re-auth for money movement.** Refunds are gated behind `ReauthSheet` (biometric,
 falling back to an app PIN). The mutation only runs from the sheet's success

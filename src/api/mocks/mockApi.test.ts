@@ -1,4 +1,11 @@
-import { authApi, dashboardApi, merchantApi, paymentsApi, transactionsApi } from '@api/index';
+import {
+  authApi,
+  dashboardApi,
+  merchantApi,
+  paymentsApi,
+  settlementsApi,
+  transactionsApi,
+} from '@api/index';
 import { ApiError } from '@api/errors';
 import { clearTokens, getAccessToken, saveTokens } from '@store/secureStorage';
 import { EXISTING_MERCHANT_MOBILE, PROGRESSIVE_KYC_DAILY_LIMIT, VALID_OTP } from '@api/mocks/db';
@@ -400,5 +407,131 @@ describe('static QR (Section 6.6 mode A)', () => {
 
     const error = await merchantApi.getStaticQr().catch((e: unknown) => e);
     expect((error as ApiError).code).toBe('kyc_incomplete');
+  });
+});
+
+describe('settlements (Section 6.11 / 6.12)', () => {
+  beforeEach(async () => {
+    const tokens = await authApi.verifyOtp({ mobile: EXISTING_MERCHANT_MOBILE, otp: VALID_OTP });
+    await saveTokens(tokens);
+  });
+
+  it('splits batches across the Pending and Settled tabs with no overlap', async () => {
+    const pending = await settlementsApi.listSettlements('pending');
+    const settled = await settlementsApi.listSettlements('settled');
+
+    expect(pending.items.length).toBeGreaterThan(0);
+    expect(settled.items.length).toBeGreaterThan(0);
+
+    expect(pending.items.every((s) => s.status === 'pending' || s.status === 'processing')).toBe(true);
+    expect(settled.items.every((s) => s.status === 'settled')).toBe(true);
+
+    const pendingIds = new Set(pending.items.map((s) => s.id));
+    expect(settled.items.some((s) => pendingIds.has(s.id))).toBe(false);
+  });
+
+  it('reconciles gross - fees = net on every batch, in integer paise', async () => {
+    const all = await settlementsApi.listSettlements();
+
+    for (const s of all.items) {
+      expectPaise(s.grossAmount, 'grossAmount');
+      expectPaise(s.feeAmount, 'feeAmount');
+      expectPaise(s.netAmount, 'netAmount');
+      // The invariant a merchant checks against their bank statement.
+      expect(s.netAmount).toBe(s.grossAmount - s.feeAmount);
+    }
+  });
+
+  it('gives settled batches a UTR and pending ones none', async () => {
+    const settled = await settlementsApi.listSettlements('settled');
+    expect(settled.items.every((s) => !!s.utr)).toBe(true);
+
+    const pending = await settlementsApi.listSettlements('pending');
+    expect(pending.items.every((s) => !s.utr)).toBe(true);
+  });
+
+  it('returns the batch with its itemised transactions (SET-4 reconciliation)', async () => {
+    const settled = await settlementsApi.listSettlements('settled');
+    const detail = await settlementsApi.getSettlement(settled.items[0]!.id);
+
+    expect(detail.transactions.length).toBeGreaterThan(0);
+    expect(detail.transactionCount).toBe(detail.transactions.length);
+    // Every listed payment must belong to this batch.
+    expect(detail.transactions.every((txn) => txn.settlementId === detail.id)).toBe(true);
+  });
+
+  it('404s on an unknown settlement id', async () => {
+    const error = await settlementsApi.getSettlement('stl_nope').catch((e: unknown) => e);
+    expect((error as ApiError).code).toBe('not_found');
+  });
+
+  describe('instant settlement', () => {
+    const pendingBatch = async () => (await settlementsApi.listSettlements('pending')).items[0]!;
+
+    it('quotes a fee whose parts sum exactly to the net amount', async () => {
+      const batch = await pendingBatch();
+      const quote = await settlementsApi.getInstantSettlementQuote(batch.id);
+
+      expect(quote.eligible).toBe(true);
+      expect(quote.netAmount).toBe(batch.netAmount);
+
+      expectPaise(quote.feeAmount, 'feeAmount');
+      expectPaise(quote.gstAmount, 'gstAmount');
+      expectPaise(quote.payoutAmount, 'payoutAmount');
+
+      expect(quote.feeAmount + quote.gstAmount).toBe(quote.totalFeeAmount);
+      expect(quote.payoutAmount + quote.totalFeeAmount).toBe(quote.netAmount);
+      expect(quote.payoutAmount).toBeLessThan(quote.netAmount);
+    });
+
+    it('settles the batch, assigns a UTR, and keeps the breakdown reconciling', async () => {
+      const batch = await pendingBatch();
+      const quote = await settlementsApi.getInstantSettlementQuote(batch.id);
+      const grossBefore = batch.grossAmount;
+
+      const result = await settlementsApi.executeInstantSettlement(batch.id);
+
+      expect(result.status).toBe('settled');
+      expect(result.utr).toBeTruthy();
+      expect(result.payoutAmount).toBe(quote.payoutAmount);
+
+      // Re-read: the fee must be folded into the batch so gross - fees = net
+      // still holds after the convenience fee is applied.
+      const after = await settlementsApi.getSettlement(batch.id);
+      expect(after.status).toBe('settled');
+      expect(after.grossAmount).toBe(grossBefore);
+      expect(after.netAmount).toBe(quote.payoutAmount);
+      expect(after.netAmount).toBe(after.grossAmount - after.feeAmount);
+    });
+
+    it('moves the batch from the Pending tab to Settled', async () => {
+      const batch = await pendingBatch();
+      await settlementsApi.executeInstantSettlement(batch.id);
+
+      const pending = await settlementsApi.listSettlements('pending');
+      const settled = await settlementsApi.listSettlements('settled');
+
+      expect(pending.items.some((s) => s.id === batch.id)).toBe(false);
+      expect(settled.items.some((s) => s.id === batch.id)).toBe(true);
+    });
+
+    it('refuses a second instant settlement of the same batch', async () => {
+      const batch = await pendingBatch();
+      await settlementsApi.executeInstantSettlement(batch.id);
+
+      const error = await settlementsApi.executeInstantSettlement(batch.id).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).details?.['reason']).toBe('already_settled');
+    });
+
+    it('reports an already-settled batch as ineligible rather than erroring', async () => {
+      const settled = await settlementsApi.listSettlements('settled');
+      const quote = await settlementsApi.getInstantSettlementQuote(settled.items[0]!.id);
+
+      // The quote endpoint is a read: it should describe the situation, so the UI
+      // can explain it, instead of throwing.
+      expect(quote.eligible).toBe(false);
+      expect(quote.ineligibleReason).toBe('already_settled');
+    });
   });
 });

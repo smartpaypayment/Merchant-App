@@ -44,7 +44,7 @@ export const queryKeys = {
   staticQr: ['merchant', 'qr', 'static'] as const,
   transactions: (filter: string, search: string) => ['transactions', filter, search] as const,
   transaction: (id: string) => ['transactions', id] as const,
-  settlements: (status: string) => ['settlements', status] as const,
+  settlements: (status: string) => ['settlements', 'list', status] as const,
   settlement: (id: string) => ['settlements', id] as const,
   reports: (from: string, to: string) => ['reports', from, to] as const,
   notifications: ['notifications'] as const,
