@@ -1,4 +1,12 @@
-import type { ISODate, Paise, PaymentMode, Transaction, TxnStatus, UUID } from './index';
+import type {
+  ISODate,
+  Paise,
+  PaymentMode,
+  SettlementStatus,
+  Transaction,
+  TxnStatus,
+  UUID,
+} from './index';
 
 /* -------------------------------------------------------------------------- */
 /* Errors — Section 9: "Standard error shape: { code, message, details? }"     */
@@ -189,4 +197,39 @@ export interface CreateTicketPayload {
   subject: string;
   body: string;
   category?: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Settlements — instant settle (Section 6.11 action, PRD SET-2)              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Fee quote for pulling a pending batch forward.
+ *
+ * All amounts are integer paise, and `payoutAmount + totalFeeAmount === netAmount`
+ * exactly — the client renders these values and never recomputes the fee, so
+ * pricing stays a server concern (Section 4.4 SET-5 fee transparency).
+ */
+export interface InstantSettlementQuoteResponse {
+  settlementId: UUID;
+  eligible: boolean;
+  /** Present when `eligible` is false; maps to an `settlements.instant.*` i18n key. */
+  ineligibleReason?: 'already_settled' | 'below_minimum' | 'failed_batch';
+  netAmount: Paise;
+  feeAmount: Paise;
+  gstAmount: Paise;
+  totalFeeAmount: Paise;
+  payoutAmount: Paise;
+  /** Fee rate in basis points, so the UI can display the percentage from data. */
+  feeBps: number;
+}
+
+export interface InstantSettlementResponse {
+  settlementId: UUID;
+  status: SettlementStatus;
+  utr?: string;
+  /** Amount credited after the instant-settlement fee. */
+  payoutAmount: Paise;
+  totalFeeAmount: Paise;
+  settledAt: ISODate;
 }

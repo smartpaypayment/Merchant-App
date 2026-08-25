@@ -15,6 +15,7 @@ import { TransactionsListScreen } from '@features/transactions/TransactionsListS
 import { TransactionDetailScreen } from '@features/transactions/TransactionDetailScreen';
 import { RefundScreen } from '@features/refunds/RefundScreen';
 import { SettlementsListScreen } from '@features/settlements/SettlementsListScreen';
+import { SettlementDetailScreen } from '@features/settlements/SettlementDetailScreen';
 import { MoreMenuScreen } from '@features/profile/MoreMenuScreen';
 import type {
   CollectStackParamList,
@@ -75,6 +76,7 @@ function SettlementsNavigator() {
   return (
     <SettlementsStack.Navigator screenOptions={{ headerShown: false }}>
       <SettlementsStack.Screen name="SettlementsList" component={SettlementsListScreen} />
+      <SettlementsStack.Screen name="SettlementDetail" component={SettlementDetailScreen} />
     </SettlementsStack.Navigator>
   );
 }

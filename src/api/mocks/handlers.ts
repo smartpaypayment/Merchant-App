@@ -2,6 +2,8 @@ import type {
   CreateTicketPayload,
   DynamicQrPayload,
   DynamicQrResponse,
+  InstantSettlementQuoteResponse,
+  InstantSettlementResponse,
   OtpRequestPayload,
   OtpRequestResponse,
   OtpVerifyPayload,
@@ -38,6 +40,10 @@ import {
   type KycSubmitResponse,
 } from '@models/kyc';
 import { isValidMobile, isValidOtp, maskAccountNumber } from '@utils/validators';
+import {
+  checkInstantSettlementEligibility,
+  computeInstantSettlementQuote,
+} from './instantSettlement';
 import {
   EXISTING_MERCHANT_MOBILE,
   initExistingMerchant,
@@ -616,6 +622,72 @@ const settlementRoutes: MockRoute[] = [
         items = items.filter((s) => s.status === 'settled');
       }
       return { items, nextCursor: null };
+    },
+  },
+  {
+    method: 'GET',
+    path: '/settlements/:id/instant/quote',
+    handler: (ctx): InstantSettlementQuoteResponse => {
+      requireAuth(ctx);
+      const settlement = mockState.settlements.find((s) => s.id === ctx.params['id']);
+      if (!settlement) throw new MockHttpError(404, 'not_found', 'Settlement not found');
+
+      const eligibility = checkInstantSettlementEligibility(settlement.status, settlement.netAmount);
+      const quote = computeInstantSettlementQuote(settlement.netAmount);
+
+      return {
+        settlementId: settlement.id,
+        eligible: eligibility.eligible,
+        ...(eligibility.reason ? { ineligibleReason: eligibility.reason } : {}),
+        ...quote,
+      };
+    },
+  },
+  {
+    method: 'POST',
+    path: '/settlements/:id/instant',
+    handler: (ctx): InstantSettlementResponse => {
+      requireAuth(ctx);
+      const settlement = mockState.settlements.find((s) => s.id === ctx.params['id']);
+      if (!settlement) throw new MockHttpError(404, 'not_found', 'Settlement not found');
+
+      const eligibility = checkInstantSettlementEligibility(settlement.status, settlement.netAmount);
+      if (!eligibility.eligible) {
+        // 409: the batch's state, not the request, is the problem.
+        throw new MockHttpError(409, 'validation_error', `Not eligible: ${eligibility.reason}`, {
+          reason: eligibility.reason,
+        });
+      }
+
+      const quote = computeInstantSettlementQuote(settlement.netAmount);
+      const settledAt = iso(0);
+
+      // Fold the convenience fee into the batch so the detail screen's breakdown
+      // continues to reconcile: gross - fees = net credited.
+      settlement.feeAmount += quote.totalFeeAmount;
+      settlement.netAmount = quote.payoutAmount;
+      settlement.status = 'settled';
+      settlement.utr = `HDFCN${800000000 + Math.floor(Math.random() * 9999999)}`;
+      settlement.settledAt = settledAt;
+
+      mockState.notifications.unshift({
+        id: nextId('ntf'),
+        type: 'settlement_credited',
+        title: 'Settlement credited',
+        body: `${quote.payoutAmount / 100}`,
+        read: false,
+        deeplink: `merchantone://settlements/${settlement.id}`,
+        createdAt: settledAt,
+      });
+
+      return {
+        settlementId: settlement.id,
+        status: settlement.status,
+        ...(settlement.utr ? { utr: settlement.utr } : {}),
+        payoutAmount: quote.payoutAmount,
+        totalFeeAmount: quote.totalFeeAmount,
+        settledAt,
+      };
     },
   },
   {
