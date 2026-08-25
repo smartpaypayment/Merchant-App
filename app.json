@@ -39,7 +39,8 @@
       "expo-secure-store",
       "expo-localization",
       "expo-audio",
-      "expo-sharing"
+      "expo-sharing",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "apiBaseUrl": "https://api.merchantone.in/v1",

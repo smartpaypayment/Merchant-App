@@ -58,3 +58,15 @@ export type { AmountInputProps } from './AmountInput';
 
 export { QRDisplay, QRDisplaySkeleton } from './QRDisplay';
 export type { QRDisplayProps } from './QRDisplay';
+
+export { FilterChips } from './FilterChips';
+export type { FilterChipsProps, FilterChipOption } from './FilterChips';
+
+export { DateRangePicker, resolvePreset, ALL_TIME_RANGE } from './DateRangePicker';
+export type { DateRangePickerProps, DateRange, DateRangePreset } from './DateRangePicker';
+
+export { PinPad } from './PinPad';
+export type { PinPadProps } from './PinPad';
+
+export { ReauthSheet } from './ReauthSheet';
+export type { ReauthSheetProps } from './ReauthSheet';
