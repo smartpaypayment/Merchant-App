@@ -6,6 +6,11 @@ import { useTranslation } from 'react-i18next';
 import { colors, radius, shadow, spacing, typography, MIN_TOUCH_TARGET } from '@theme/index';
 import { HomeScreen } from '@features/home/HomeScreen';
 import { CollectPaymentScreen } from '@features/collect/CollectPaymentScreen';
+import { StaticQRScreen } from '@features/collect/StaticQRScreen';
+import { AmountEntryScreen } from '@features/collect/AmountEntryScreen';
+import { DynamicQRScreen } from '@features/collect/DynamicQRScreen';
+import { PaymentLinkScreen } from '@features/collect/PaymentLinkScreen';
+import { PaymentSuccessScreen } from '@features/collect/PaymentSuccessScreen';
 import { TransactionsListScreen } from '@features/transactions/TransactionsListScreen';
 import { SettlementsListScreen } from '@features/settlements/SettlementsListScreen';
 import { MoreMenuScreen } from '@features/profile/MoreMenuScreen';
@@ -31,6 +36,17 @@ function CollectNavigator() {
   return (
     <CollectStack.Navigator screenOptions={{ headerShown: false }}>
       <CollectStack.Screen name="CollectPayment" component={CollectPaymentScreen} />
+      <CollectStack.Screen name="StaticQR" component={StaticQRScreen} />
+      <CollectStack.Screen name="AmountEntry" component={AmountEntryScreen} />
+      <CollectStack.Screen name="QRScreen" component={DynamicQRScreen} />
+      <CollectStack.Screen name="PaymentLink" component={PaymentLinkScreen} />
+      <CollectStack.Screen
+        name="PaymentSuccess"
+        component={PaymentSuccessScreen}
+        // No swipe-back off a completed payment: the QR it came from is dead, and
+        // returning to it would show a stale "waiting" screen.
+        options={{ gestureEnabled: false, animation: 'fade' }}
+      />
     </CollectStack.Navigator>
   );
 }

@@ -1,4 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { ISODate, Paise } from '@models/index';
 import type { KycStep } from '@models/kyc';
 
 /**
@@ -22,10 +23,25 @@ export type OnboardingStackParamList = {
 
 export type CollectStackParamList = {
   CollectPayment: undefined;
-  AmountEntry: undefined;
-  QRScreen: { ref: string; amount: number; qrPayload: string; expiresAt: string };
+  /** `mode` decides whether the amount produces a dynamic QR or a payment link. */
+  AmountEntry: { mode: 'qr' | 'link' } | undefined;
+  /** All money params are integer paise (Section 8). */
+  QRScreen: { ref: string; amount: Paise; qrPayload: string; expiresAt: ISODate };
   StaticQR: undefined;
-  PaymentSuccess: { transactionId: string };
+  PaymentLink: { url: string; amount: Paise; expiresAt: ISODate };
+  PaymentSuccess: {
+    amount: Paise;
+    createdAt: ISODate;
+    transactionId?: string;
+    utr?: string;
+    payerVpaMasked?: string;
+    /**
+     * Speak the confirmation on mount. False on the dynamic-QR path, where the
+     * announcement already fired at detection time; true when arriving from a
+     * push or deep link, where this screen is the first UI shown.
+     */
+    announceOnMount?: boolean;
+  };
 };
 
 export type TransactionsStackParamList = {

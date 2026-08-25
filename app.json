@@ -25,13 +25,22 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.CAMERA", "android.permission.VIBRATE", "android.permission.INTERNET"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
+        "android.permission.INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
-    "plugins": ["expo-secure-store", "expo-localization", "expo-audio"],
+    "plugins": [
+      "expo-secure-store",
+      "expo-localization",
+      "expo-audio",
+      "expo-sharing"
+    ],
     "extra": {
       "apiBaseUrl": "https://api.merchantone.in/v1",
       "useMockApi": true

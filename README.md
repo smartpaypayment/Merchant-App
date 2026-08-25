@@ -12,7 +12,7 @@ Runs **end-to-end against an in-memory mock backend**, so no live API is require
 | 2 | Auth flow (Login → OTP → token storage) | ✅ Complete |
 | 3 | Onboarding / KYC wizard | ✅ Complete |
 | 4 | Home dashboard | ✅ Complete |
-| 5 | Collect payment (static/dynamic QR, status, success + audio) | ⬜ Navigable placeholder |
+| 5 | Collect payment (static/dynamic QR, status, success + audio) | ✅ Complete |
 | 6 | Transactions list + detail + refund | ⬜ Navigable placeholder |
 | 7 | Settlements list + detail | ⬜ Navigable placeholder |
 | 8 | Reports | ⬜ Navigable placeholder |
@@ -34,7 +34,7 @@ Verification:
 
 ```bash
 npm run typecheck     # tsc --noEmit, strict
-npm test              # 52 tests
+npm test              # 60 tests
 npm run bundle:check  # production Android bundle
 ```
 
@@ -78,6 +78,21 @@ compile error rather than a runtime fallback. All 8 bundles are at key parity.
 
 **Security.** Tokens live in `expo-secure-store` (Keystore/Keychain); the Aadhaar
 number is held in component state only and never written to the KYC draft.
+
+**Payment status.** `usePaymentStatus` implements the §10 hybrid: poll every ~2.5s
+while the QR is visible, stop dead on any terminal status, and dedupe by ref so a
+duplicate push or a late poll cannot fire the success handler twice. Polling backs
+off while the app is backgrounded and re-polls immediately on return — the most
+likely moment for a completed payment. Poll errors do *not* end the watch, since a
+merchant on flaky 2G would otherwise be stranded on a QR that may already be paid.
+`notifyPaymentEvent(ref)` is the seam for the FCM handler.
+
+**Audio confirmation.** Fires at *detection* time in `DynamicQRScreen`, not on
+mount of the success screen, so the ~5s target in §15 does not include a screen
+transition — and the merchant hears it without looking at the phone, which is the
+point of the soundbox behaviour. Uses on-device TTS in the merchant's language;
+the trade-off (no volume control, needs a TTS voice installed) and the
+pre-recorded-clip alternative are documented in `audioConfirmation.ts`.
 
 ## Structure
 
