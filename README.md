@@ -16,11 +16,11 @@ Runs **end-to-end against an in-memory mock backend**, so no live API is require
 | 6 | Transactions list + detail + refund | ✅ Complete |
 | 7 | Settlements list + detail | ✅ Complete |
 | 8 | Reports | ✅ Complete |
-| 9 | Profile, settings, staff, support, notifications | 🟡 Notifications done; rest placeholder |
+| 9 | Profile, settings, staff, support, notifications | ✅ Complete |
 | 10 | Offline handling, security hardening, tests | 🟡 Foundations in place |
 
-Placeholder screens are wired into the real Section 4 navigation map and state which
-build step replaces them — every tab and route resolves, nothing crashes.
+Every screen in the Section 4 navigation map is now implemented — there are no
+placeholder screens left, and the "Soon" badges are gone from the More menu.
 
 ## Running
 
@@ -34,7 +34,7 @@ Verification:
 
 ```bash
 npm run typecheck     # tsc --noEmit, strict
-npm test              # 215 tests
+npm test              # 285 tests
 npm run bundle:check  # production Android bundle
 ```
 
@@ -111,6 +111,44 @@ off while the app is backgrounded and re-polls immediately on return — the mos
 likely moment for a completed payment. Poll errors do *not* end the watch, since a
 merchant on flaky 2G would otherwise be stranded on a QR that may already be paid.
 `notifyPaymentEvent(ref)` is the seam for the FCM handler.
+
+**Grievance contacts are placeholders, and the app says so.** `supportContacts.ts`
+holds the support line, nodal officer and RBI portal target. RBI's redressal
+requirement is that a *named, reachable* officer is published, so inventing one
+would be worse than publishing none — a merchant would call a dead number believing
+they had escalated. `CONTACTS_ARE_PLACEHOLDERS` is therefore `true`, the screen
+renders a warning while it stays true, and `supportContacts.test.ts` asserts the flag
+and the values move together so the warning can neither be dropped early nor outlive
+the fake numbers. The email uses the RFC 2606 `.invalid` TLD so it cannot reach
+someone else's inbox.
+
+**Settings offers no theme toggle and no announcement volume slider.** Both are
+listed in §6.16, and both would have been switches wired to nothing. `expo-speech`
+exposes no volume — the announcement follows device media volume, which the screen
+states instead. Dark mode is not a toggle either: `theme/colors.ts` is a static
+palette imported directly by ~40 files, so it needs a second palette, a context to
+thread it, and re-verification of every §13 contrast ratio. The
+`audioConfirmation.volume` field stays in the model for the pre-recorded-clip path
+that could honour it. Biometrics are shown read-only for the same reason — the OS
+owns enrolment, there is nothing for the app to switch.
+
+**A bank-account change is not an ordinary profile edit.** Redirecting the
+settlement account redirects every future rupee, so §6.14's MFA requirement is
+implemented literally: the form holds its values, `ReauthSheet` gates them, and the
+mutation runs only from the sheet's success callback. The penny drop re-runs and the
+raw account number is never stored — a test asserts it appears nowhere in the
+merchant object. Ordinary business details save directly. PAN and mobile are
+read-only: PAN is bound to the KYC record and the mobile is the login identity, so
+an editable box that silently failed would be worse than no box.
+
+**Staff gets a `PATCH` the PRD's endpoint table omits.** §6.15 asks for "edit role"
+while §9 lists only GET/POST/DELETE. Remove-and-re-add would churn the member's id
+and detach any activity attributed to them, so `PATCH /staff/{id}` was added.
+Duplicate mobiles return 409 with `details.field`, which the screen attaches to the
+input rather than a banner — the merchant's next action is to fix that one box.
+Staff writes are blocked offline rather than queued: these are authorisation
+changes, and deferring "remove the cashier" would leave a dismissed employee able to
+collect until the phone found signal.
 
 **Audio confirmation.** Fires at *detection* time in `DynamicQRScreen`, not on
 mount of the success screen, so the ~5s target in §15 does not include a screen

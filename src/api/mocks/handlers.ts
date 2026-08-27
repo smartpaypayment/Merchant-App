@@ -4,6 +4,7 @@ import type {
   DynamicQrResponse,
   InstantSettlementQuoteResponse,
   InstantSettlementResponse,
+  ProfileUpdatePayload,
   OtpRequestPayload,
   OtpRequestResponse,
   OtpVerifyPayload,
@@ -39,7 +40,14 @@ import {
   type KycStepPatch,
   type KycSubmitResponse,
 } from '@models/kyc';
-import { isValidMobile, isValidOtp, maskAccountNumber } from '@utils/validators';
+import {
+  ACCOUNT_NUMBER_REGEX,
+  GSTIN_REGEX,
+  IFSC_REGEX,
+  isValidMobile,
+  isValidOtp,
+  maskAccountNumber,
+} from '@utils/validators';
 import {
   checkInstantSettlementEligibility,
   computeInstantSettlementQuote,
@@ -190,7 +198,51 @@ const merchantRoutes: MockRoute[] = [
     path: '/merchant/profile',
     handler: (ctx): Merchant => {
       requireAuth(ctx);
-      mockState.merchant = { ...mockState.merchant, ...body<Partial<Merchant>>(ctx) };
+      const patch = body<ProfileUpdatePayload>(ctx);
+
+      /*
+       * A settlement-account change is not an ordinary profile edit — it
+       * redirects where all future money lands. So it is validated and
+       * penny-dropped here exactly as in KYC step 3, and the raw account number
+       * is never stored: only the masked form is kept (Section 12).
+       *
+       * The client sends `bankAccount` with a plain `accountNumber`; the response
+       * carries `accountNumberMasked`.
+       */
+      if (patch.bankAccount) {
+        const { accountNumber, ifsc, holderName } = patch.bankAccount;
+
+        if (!ACCOUNT_NUMBER_REGEX.test(accountNumber)) {
+          throw new MockHttpError(400, 'validation_error', 'Account number must be 9-18 digits');
+        }
+        if (!IFSC_REGEX.test(ifsc)) {
+          throw new MockHttpError(400, 'validation_error', 'IFSC failed validation');
+        }
+        // Same rigged failure as KYC step 3, so the error path stays reachable.
+        if (accountNumber.endsWith('0000')) {
+          throw new MockHttpError(422, 'bank_verification_failed', 'Penny drop was returned by the bank');
+        }
+
+        mockState.merchant.bankAccount = {
+          accountNumberMasked: maskAccountNumber(accountNumber),
+          ifsc,
+          holderName,
+          verified: true,
+        };
+      }
+
+      if (patch.businessName !== undefined) mockState.merchant.businessName = patch.businessName;
+      if (patch.category !== undefined) mockState.merchant.category = patch.category;
+      if (patch.address !== undefined) mockState.merchant.address = patch.address;
+      if (patch.gstin !== undefined) {
+        if (patch.gstin !== '' && !GSTIN_REGEX.test(patch.gstin)) {
+          throw new MockHttpError(400, 'validation_error', 'GSTIN failed validation');
+        }
+        // An empty string clears it rather than storing "".
+        if (patch.gstin === '') delete mockState.merchant.gstin;
+        else mockState.merchant.gstin = patch.gstin;
+      }
+
       return mockState.merchant;
     },
   },
@@ -777,8 +829,37 @@ const miscRoutes: MockRoute[] = [
       if (!payload.name || !isValidMobile(payload.mobile)) {
         throw new MockHttpError(400, 'validation_error', 'Name and valid mobile are required');
       }
+      // A mobile identifies the person who will log in, so it has to be unique.
+      if (mockState.staff.some((s) => s.mobile === payload.mobile)) {
+        throw new MockHttpError(409, 'validation_error', 'This mobile is already added', {
+          field: 'mobile',
+        });
+      }
       const member: Staff = { id: nextId('stf'), ...payload };
       mockState.staff.push(member);
+      return member;
+    },
+  },
+  {
+    /*
+     * Section 6.15 asks for "edit role", which the Section 9 endpoint table omits.
+     * Added here because removing and re-adding a staff member to change their
+     * role would churn their id and lose any activity attributed to them.
+     */
+    method: 'PATCH',
+    path: '/staff/:id',
+    handler: (ctx): Staff => {
+      requireAuth(ctx);
+      const member = mockState.staff.find((s) => s.id === ctx.params['id']);
+      if (!member) throw new MockHttpError(404, 'not_found', 'Staff member not found');
+
+      const patch = body<Partial<Pick<Staff, 'role' | 'name'>>>(ctx);
+      if (patch.role && patch.role !== 'manager' && patch.role !== 'cashier') {
+        throw new MockHttpError(400, 'validation_error', 'Unknown role');
+      }
+
+      if (patch.role) member.role = patch.role;
+      if (patch.name) member.name = patch.name;
       return member;
     },
   },
