@@ -15,7 +15,7 @@ Runs **end-to-end against an in-memory mock backend**, so no live API is require
 | 5 | Collect payment (static/dynamic QR, status, success + audio) | ✅ Complete |
 | 6 | Transactions list + detail + refund | ✅ Complete |
 | 7 | Settlements list + detail | ✅ Complete |
-| 8 | Reports | ⬜ Navigable placeholder |
+| 8 | Reports | ✅ Complete |
 | 9 | Profile, settings, staff, support, notifications | 🟡 Notifications done; rest placeholder |
 | 10 | Offline handling, security hardening, tests | 🟡 Foundations in place |
 
@@ -34,7 +34,7 @@ Verification:
 
 ```bash
 npm run typecheck     # tsc --noEmit, strict
-npm test              # 146 tests
+npm test              # 215 tests
 npm run bundle:check  # production Android bundle
 ```
 
