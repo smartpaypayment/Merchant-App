@@ -59,6 +59,15 @@ export type { AmountInputProps } from './AmountInput';
 export { QRDisplay, QRDisplaySkeleton } from './QRDisplay';
 export type { QRDisplayProps } from './QRDisplay';
 
+export { Chart } from './Chart';
+export type { ChartProps, ChartPoint } from './Chart';
+export {
+  computeChartGeometry,
+  computeNiceMax,
+  selectLabelIndices,
+} from './chartScale';
+export type { ChartGeometry, BarLayout, GridLine } from './chartScale';
+
 export { FilterChips } from './FilterChips';
 export type { FilterChipsProps, FilterChipOption } from './FilterChips';
 

@@ -1,6 +1,5 @@
-import { Directory, File, Paths } from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
-import type { Paise, Settlement, Transaction } from '@models/index';
+import type { Settlement, Transaction } from '@models/index';
+import { csvRow, paiseToCsvAmount, shareCsv, type CsvExportResult } from '@utils/csv';
 import { toDateKey } from '@utils/date';
 
 /**
@@ -46,33 +45,10 @@ export interface StatementLabels {
   statusLabels: Record<string, string>;
 }
 
-/** Renders integer paise as a bare 2-decimal rupee figure for a spreadsheet cell. */
-function paiseToCsvAmount(paise: Paise): string {
-  const safe = Number.isFinite(paise) ? Math.round(paise) : 0;
-  const negative = safe < 0;
-  const abs = Math.abs(safe);
-  const body = `${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
-  return negative ? `-${body}` : body;
-}
-
-/**
- * Escapes a CSV field.
- *
- * Also neutralises the leading `=`, `+`, `-` and `@` characters that Excel
- * interprets as a formula — a payer-supplied note reaching a spreadsheet is a
- * CSV-injection vector, and settlement statements get opened by accountants.
+/*
+ * The CSV primitives (escaping, formula-injection guard, money formatting, BOM and
+ * file sharing) live in `@utils/csv` and are shared with the sales report export.
  */
-function csvField(value: string): string {
-  const needsFormulaGuard = /^[=+\-@\t\r]/.test(value);
-  const guarded = needsFormulaGuard ? `'${value}` : value;
-
-  if (/[",\n\r]/.test(guarded)) {
-    return `"${guarded.replace(/"/g, '""')}"`;
-  }
-  return guarded;
-}
-
-const csvRow = (fields: readonly string[]): string => fields.map(csvField).join(',');
 
 /**
  * Builds the CSV body for one settlement batch.
@@ -138,47 +114,13 @@ export function statementFileName(settlement: Settlement): string {
   return `settlement-statement-${datePart}-${idPart}.csv`;
 }
 
-export type StatementExportResult =
-  | { ok: true; uri: string }
-  | { ok: false; reason: 'write_failed' | 'sharing_unavailable' };
+export type StatementExportResult = CsvExportResult;
 
-/**
- * Writes the statement to cache and opens the share sheet.
- *
- * Routed through the share sheet rather than written to a public directory:
- * Android has no writable public Downloads path without SAF or the media library,
- * so sharing is what actually lets the merchant put the file somewhere they can
- * reach (Drive, Files, WhatsApp to their accountant).
- */
-export async function shareStatement(
+/** Writes the statement to cache and opens the share sheet. */
+export function shareStatement(
   fileName: string,
   contents: string,
   dialogTitle: string,
 ): Promise<StatementExportResult> {
-  let uri: string;
-
-  try {
-    const dir = new Directory(Paths.cache, 'statements');
-    if (!dir.exists) dir.create({ intermediates: true });
-
-    const file = new File(dir, fileName);
-    file.create({ overwrite: true });
-    // A BOM makes Excel read the file as UTF-8, so localized headers and Indic
-    // script in notes survive instead of becoming mojibake.
-    file.write(`\uFEFF${contents}`, { encoding: 'utf8' });
-    uri = file.uri;
-  } catch {
-    return { ok: false, reason: 'write_failed' };
-  }
-
-  try {
-    if (!(await Sharing.isAvailableAsync())) {
-      return { ok: false, reason: 'sharing_unavailable' };
-    }
-    await Sharing.shareAsync(uri, { mimeType: 'text/csv', dialogTitle, UTI: 'public.comma-separated-values-text' });
-    return { ok: true, uri };
-  } catch {
-    // The user dismissing the share sheet is not a failure; the file exists.
-    return { ok: true, uri };
-  }
+  return shareCsv(fileName, contents, dialogTitle, 'statements');
 }

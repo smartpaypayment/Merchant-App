@@ -1,4 +1,4 @@
-import type { StaticQrResponse } from '@models/api';
+import type { ProfileUpdatePayload, StaticQrResponse } from '@models/api';
 import type { Merchant, MerchantPreferences } from '@models/index';
 import type {
   AadhaarOtpRequestPayload,
@@ -11,7 +11,14 @@ import { get, patch, post } from './client';
 
 export const getProfile = (): Promise<Merchant> => get<Merchant>('/merchant/profile');
 
-export const updateProfile = (body: Partial<Merchant>): Promise<Merchant> =>
+/**
+ * `PATCH /merchant/profile` (Section 6.14).
+ *
+ * Takes `ProfileUpdatePayload` rather than `Partial<Merchant>`: a bank-account
+ * change sends a raw account number, whereas `Merchant` only ever carries the
+ * masked form.
+ */
+export const updateProfile = (body: ProfileUpdatePayload): Promise<Merchant> =>
   patch<Merchant>('/merchant/profile', body);
 
 /** `PATCH /merchant/kyc` — saves a single wizard step (Section 6.4). */

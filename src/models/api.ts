@@ -1,4 +1,5 @@
 import type {
+  Address,
   ISODate,
   Paise,
   PaymentMode,
@@ -222,6 +223,33 @@ export interface InstantSettlementQuoteResponse {
   payoutAmount: Paise;
   /** Fee rate in basis points, so the UI can display the percentage from data. */
   feeBps: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Profile updates (Section 6.14)                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Body of `PATCH /merchant/profile`.
+ *
+ * Note the asymmetry on the bank account: the client sends a plain
+ * `accountNumber`, and the server responds with `accountNumberMasked` on the
+ * `Merchant`. The raw number is never persisted on device or echoed back
+ * (Section 12), so this cannot reuse the `BankAccount` model.
+ */
+export interface ProfileUpdatePayload {
+  businessName?: string;
+  /** MCC code. */
+  category?: string;
+  address?: Address;
+  /** Empty string clears the GSTIN. */
+  gstin?: string;
+  /** Changing this redirects all future settlements, so it requires re-auth. */
+  bankAccount?: {
+    accountNumber: string;
+    ifsc: string;
+    holderName: string;
+  };
 }
 
 export interface InstantSettlementResponse {

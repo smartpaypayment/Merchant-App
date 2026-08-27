@@ -45,7 +45,8 @@ export function QuickActionsRow() {
       key: 'reports',
       labelKey: 'home.quickActions.reports',
       icon: 'bar-chart-outline',
-      onPress: () => navigation.navigate('Main', { screen: 'More', params: { screen: 'MoreMenu' } }),
+      // Straight to Reports rather than the More menu — this is a one-tap path.
+      onPress: () => navigation.navigate('Main', { screen: 'More', params: { screen: 'Reports' } }),
     },
     {
       key: 'refund',

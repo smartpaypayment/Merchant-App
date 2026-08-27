@@ -17,6 +17,11 @@ import { RefundScreen } from '@features/refunds/RefundScreen';
 import { SettlementsListScreen } from '@features/settlements/SettlementsListScreen';
 import { SettlementDetailScreen } from '@features/settlements/SettlementDetailScreen';
 import { MoreMenuScreen } from '@features/profile/MoreMenuScreen';
+import { ProfileScreen } from '@features/profile/ProfileScreen';
+import { SettingsScreen } from '@features/profile/SettingsScreen';
+import { StaffScreen } from '@features/profile/StaffScreen';
+import { ReportsScreen } from '@features/reports/ReportsScreen';
+import { SupportScreen } from '@features/support/SupportScreen';
 import type {
   CollectStackParamList,
   MainTabParamList,
@@ -86,6 +91,11 @@ function MoreNavigator() {
   return (
     <MoreStack.Navigator screenOptions={{ headerShown: false }}>
       <MoreStack.Screen name="MoreMenu" component={MoreMenuScreen} />
+      <MoreStack.Screen name="Reports" component={ReportsScreen} />
+      <MoreStack.Screen name="Profile" component={ProfileScreen} />
+      <MoreStack.Screen name="Staff" component={StaffScreen} />
+      <MoreStack.Screen name="Support" component={SupportScreen} />
+      <MoreStack.Screen name="Settings" component={SettingsScreen} />
     </MoreStack.Navigator>
   );
 }
