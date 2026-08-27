@@ -1,4 +1,4 @@
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
@@ -13,16 +13,14 @@ type Nav = NativeStackNavigationProp<MoreStackParamList, 'MoreMenu'>;
 interface MenuItem {
   key: keyof Pick<MoreStackParamList, 'Reports' | 'Profile' | 'Staff' | 'Support' | 'Settings'>;
   icon: keyof typeof Ionicons.glyphMap;
-  /** False for sections still to be built (Section 16 step 9). */
-  available: boolean;
 }
 
 const MENU: readonly MenuItem[] = [
-  { key: 'Reports', icon: 'bar-chart-outline', available: true },
-  { key: 'Profile', icon: 'storefront-outline', available: false },
-  { key: 'Staff', icon: 'people-outline', available: false },
-  { key: 'Support', icon: 'help-buoy-outline', available: false },
-  { key: 'Settings', icon: 'settings-outline', available: false },
+  { key: 'Reports', icon: 'bar-chart-outline' },
+  { key: 'Profile', icon: 'storefront-outline' },
+  { key: 'Staff', icon: 'people-outline' },
+  { key: 'Support', icon: 'help-buoy-outline' },
+  { key: 'Settings', icon: 'settings-outline' },
 ] as const;
 
 /** Maps a route name to its i18n key stem, e.g. `Reports` → `more.reports`. */
@@ -32,19 +30,15 @@ const i18nStem = (key: MenuItem['key']): string => `more.${key.charAt(0).toLower
  * The "More" tab menu (Section 4: `More → MoreMenu → Reports, Profile, Staff,
  * Support, Settings`).
  *
- * Reports is live. The remaining four are marked with a "Soon" badge and explain
- * themselves when tapped, rather than being either invisible or silently inert —
- * a merchant should be able to see that the feature is coming and that their tap
- * registered. They become live in build step 9.
+ * All five destinations are live as of build step 9. The "Soon" badge and the
+ * per-item `available` flag that carried the menu through steps 7–8 are gone
+ * rather than left behind as a branch that can no longer be false — Section 16
+ * step 10 adds no further rows here.
  */
 export function MoreMenuScreen() {
   const { t } = useTranslation();
   const navigation = useNavigation<Nav>();
   const merchant = useAuthStore((s) => s.merchant);
-
-  const openPending = () => {
-    Alert.alert(t('common.comingSoon'), t('common.comingSoonBody'));
-  };
 
   return (
     <Screen scroll testID="more-menu-screen">
@@ -76,12 +70,10 @@ export function MoreMenuScreen() {
         {MENU.map((item, index) => (
           <Pressable
             key={item.key}
-            onPress={() => (item.available ? navigation.navigate(item.key) : openPending())}
+            onPress={() => navigation.navigate(item.key)}
             accessibilityRole="button"
             accessibilityLabel={t(i18nStem(item.key))}
-            accessibilityHint={
-              item.available ? t(`${i18nStem(item.key)}Body`) : t('common.comingSoonBody')
-            }
+            accessibilityHint={t(`${i18nStem(item.key)}Body`)}
             android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
             style={({ pressed }) => [
               styles.menuRow,
@@ -90,35 +82,18 @@ export function MoreMenuScreen() {
             ]}
             testID={`more-${item.key.toLowerCase()}`}
           >
-            <View style={[styles.menuIcon, !item.available && styles.menuIconPending]}>
-              <Ionicons
-                name={item.icon}
-                size={20}
-                color={item.available ? colors.primary : colors.textTertiary}
-              />
+            <View style={styles.menuIcon}>
+              <Ionicons name={item.icon} size={20} color={colors.primary} />
             </View>
 
             <View style={styles.menuText}>
-              <View style={styles.menuLabelRow}>
-                <Text style={[styles.menuLabel, !item.available && styles.menuLabelPending]}>
-                  {t(i18nStem(item.key))}
-                </Text>
-                {!item.available ? (
-                  <View style={styles.soonBadge}>
-                    <Text style={styles.soonBadgeText}>{t('more.comingSoonBadge')}</Text>
-                  </View>
-                ) : null}
-              </View>
+              <Text style={styles.menuLabel}>{t(i18nStem(item.key))}</Text>
               <Text style={styles.menuBody} numberOfLines={2}>
                 {t(`${i18nStem(item.key)}Body`)}
               </Text>
             </View>
 
-            <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={item.available ? colors.textTertiary : colors.disabled}
-            />
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </Pressable>
         ))}
       </View>
@@ -176,19 +151,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  menuIconPending: { backgroundColor: colors.surfaceAlt },
   menuText: { flex: 1 },
-  menuLabelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   menuLabel: { ...typography.body, color: colors.text },
-  menuLabelPending: { color: colors.textSecondary },
-  soonBadge: {
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 1,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  soonBadgeText: { ...typography.caption, color: colors.textTertiary, fontSize: 10 },
   menuBody: { ...typography.caption, color: colors.textTertiary, marginTop: 2 },
 });
