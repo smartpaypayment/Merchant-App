@@ -17,6 +17,7 @@ import { RefundScreen } from '@features/refunds/RefundScreen';
 import { SettlementsListScreen } from '@features/settlements/SettlementsListScreen';
 import { SettlementDetailScreen } from '@features/settlements/SettlementDetailScreen';
 import { MoreMenuScreen } from '@features/profile/MoreMenuScreen';
+import { ReportsScreen } from '@features/reports/ReportsScreen';
 import type {
   CollectStackParamList,
   MainTabParamList,
@@ -86,6 +87,7 @@ function MoreNavigator() {
   return (
     <MoreStack.Navigator screenOptions={{ headerShown: false }}>
       <MoreStack.Screen name="MoreMenu" component={MoreMenuScreen} />
+      <MoreStack.Screen name="Reports" component={ReportsScreen} />
     </MoreStack.Navigator>
   );
 }
