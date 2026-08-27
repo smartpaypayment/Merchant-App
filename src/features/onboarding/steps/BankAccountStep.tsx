@@ -8,6 +8,7 @@ import { PrimaryButton, TextField } from '@components/index';
 import { digitsOnly, isValidIfsc, toUpperAlnum } from '@utils/validators';
 import type { BankAccountStepData } from '@models/kyc';
 import { bankAccountSchema, type BankAccountFormValues } from '../schemas';
+import { useSensitiveScreen } from '@hooks/useSensitiveScreen';
 
 export interface BankAccountStepProps {
   initial?: BankAccountStepData | undefined;
@@ -24,6 +25,9 @@ export interface BankAccountStepProps {
  * merchant the payoff for entering their most sensitive data.
  */
 export function BankAccountStep({ initial, onSubmit, isSubmitting }: BankAccountStepProps) {
+  // Full account number on screen (Section 12).
+  useSensitiveScreen();
+
   const { t } = useTranslation();
 
   const { control, handleSubmit, formState } = useForm<BankAccountFormValues>({
@@ -70,6 +74,7 @@ export function BankAccountStep({ initial, onSubmit, isSubmitting }: BankAccount
             inputMode="numeric"
             maxLength={18}
             editable={!isSubmitting}
+            sensitive
             testID="kyc-bank-account"
           />
         )}
@@ -92,6 +97,7 @@ export function BankAccountStep({ initial, onSubmit, isSubmitting }: BankAccount
             // Prevents the "paste the same wrong number twice" failure mode.
             contextMenuHidden
             editable={!isSubmitting}
+            sensitive
             testID="kyc-bank-account-confirm"
           />
         )}

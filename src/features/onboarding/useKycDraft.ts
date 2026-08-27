@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { KycStep, type KycDraft } from '@models/kyc';
-import { storage, StorageKeys } from '@store/storage';
+import { clearKycDraft, loadKycDraft, saveKycDraft } from '@store/kycDraftStorage';
 
 const EMPTY_DRAFT: KycDraft = { currentStep: KycStep.BusinessInfo, completedThrough: 0 };
 
@@ -13,9 +13,12 @@ const EMPTY_DRAFT: KycDraft = { currentStep: KycStep.BusinessInfo, completedThro
  * on a flaky 2G connection — or one who force-quits the app — resumes exactly
  * where they stopped instead of retyping their PAN and bank details.
  *
- * Only non-sensitive progress data is kept. Notably the Aadhaar number is never
- * written here: the draft stores the consent flag and the last four digits the
- * server returns, matching the Section 12 rule on sensitive data at rest.
+ * Storage is split by sensitivity, in `@store/kycDraftStorage`: progress and
+ * non-secret fields go to AsyncStorage, while the PAN and the full bank account
+ * number go to the Keystore/Keychain. The Aadhaar number is never persisted at
+ * all — the draft holds only the consent flag and the last four digits the server
+ * returns. Together that satisfies the Section 12 rule on sensitive data at rest
+ * without giving up resumability.
  */
 export function useKycDraft(): {
   draft: KycDraft;
@@ -31,7 +34,7 @@ export function useKycDraft(): {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const saved = await storage.getObject<KycDraft>(StorageKeys.kycDraft);
+      const saved = await loadKycDraft();
       if (!cancelled) {
         if (saved) setDraft(saved);
         setIsLoaded(true);
@@ -53,7 +56,7 @@ export function useKycDraft(): {
           currentStep: Math.min(step + 1, KycStep.Done) as KycStep,
           updatedAt: new Date().toISOString(),
         };
-        void storage.setObject(StorageKeys.kycDraft, next);
+        void saveKycDraft(next);
         return next;
       });
     },
@@ -64,7 +67,7 @@ export function useKycDraft(): {
     async (step: KycStep) => {
       setDraft((current) => {
         const next = { ...current, currentStep: step };
-        void storage.setObject(StorageKeys.kycDraft, next);
+        void saveKycDraft(next);
         return next;
       });
     },
@@ -73,7 +76,7 @@ export function useKycDraft(): {
 
   const clear = useCallback(async () => {
     setDraft(EMPTY_DRAFT);
-    await storage.remove(StorageKeys.kycDraft);
+    await clearKycDraft();
   }, []);
 
   return { draft, isLoaded, completeStep, goToStep, clear };
