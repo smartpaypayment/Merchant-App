@@ -1,28 +1,26 @@
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { colors, radius, spacing, typography, MIN_TOUCH_TARGET } from '@theme/index';
+import { colors, radius, spacing, typography } from '@theme/index';
 import {
-  AmountDisplay,
   EmptyState,
   ErrorState,
   FilterChips,
   ListSkeleton,
   Screen,
-  SettlementStatusBadge,
   type FilterChipOption,
 } from '@components/index';
 import type { SettlementTab } from '@api/settlements.api';
 import { useNetworkStatus } from '@hooks/useNetworkStatus';
 import type { Settlement } from '@models/index';
-import { dateParts, relativeDayKey } from '@utils/date';
 import { track } from '@utils/analytics';
 import type { SettlementsStackParamList } from '@app/navigation/types';
 import { useSettlements } from './useSettlements';
 import { InstantSettleSheet } from './InstantSettleSheet';
+import { SettlementRow } from './SettlementRow';
 
 type Nav = NativeStackNavigationProp<SettlementsStackParamList, 'SettlementsList'>;
 
@@ -74,82 +72,17 @@ export function SettlementsListScreen() {
   const showError = isError && settlements.length === 0;
   const showEmpty = !isLoading && !isError && settlements.length === 0;
 
-  const renderRow = ({ item }: { item: Settlement }) => {
-    const isSettled = item.status === 'settled';
-    const relative = relativeDayKey(item.settledAt ?? item.createdAt);
-    const { day, monthKey, year } = dateParts(item.settledAt ?? item.createdAt);
-    const dateLabel = relative ? t(relative) : `${day} ${t(monthKey)} ${year}`;
-
-    // Instant settle only makes sense on money that has not landed yet.
-    const canSettleNow = !isSettled && item.status !== 'failed';
-
-    return (
-      <Pressable
-        onPress={() => openDetail(item)}
-        accessibilityRole="button"
-        accessibilityLabel={`${dateLabel}, ${t(`settlements.status.${item.status}`)}`}
-        android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
-        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-        testID={`settlement-row-${item.id}`}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardHeaderText}>
-            <Text style={styles.dateLabel}>{dateLabel}</Text>
-            <Text style={styles.batchLabel}>
-              {t('settlements.batchLabel', { count: item.transactionCount })}
-            </Text>
-          </View>
-          <SettlementStatusBadge status={item.status} />
-        </View>
-
-        <View style={styles.amountRow}>
-          <View style={styles.amountBlock}>
-            <Text style={styles.amountCaption}>
-              {isSettled ? t('settlements.creditedLabel') : t('settlements.expectedLabel')}
-            </Text>
-            <AmountDisplay
-              amount={item.netAmount}
-              size="lg"
-              tone={isSettled ? 'success' : 'default'}
-              testID={`settlement-amount-${item.id}`}
-            />
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-        </View>
-
-        {/* UTR is the merchant's reconciliation handle against their bank line. */}
-        {item.utr ? (
-          <View style={styles.utrRow}>
-            <Ionicons name="receipt-outline" size={13} color={colors.textTertiary} />
-            <Text style={styles.utrText} numberOfLines={1} selectable>
-              {t('settlements.utrLabel')}: {item.utr}
-            </Text>
-          </View>
-        ) : null}
-
-        {canSettleNow ? (
-          <Pressable
-            onPress={() => setInstantTarget(item)}
-            disabled={!isOnline}
-            accessibilityRole="button"
-            accessibilityLabel={t('settlements.instant.cta')}
-            {...(!isOnline ? { accessibilityHint: t('settlements.instant.offlineBody') } : {})}
-            style={({ pressed }) => [
-              styles.instantButton,
-              pressed && isOnline && styles.instantButtonPressed,
-              !isOnline && styles.instantButtonDisabled,
-            ]}
-            testID={`settlement-instant-${item.id}`}
-          >
-            <Ionicons name="flash" size={16} color={isOnline ? colors.primary : colors.disabled} />
-            <Text style={[styles.instantLabel, !isOnline && styles.instantLabelDisabled]}>
-              {t('settlements.instant.cta')}
-            </Text>
-          </Pressable>
-        ) : null}
-      </Pressable>
-    );
-  };
+  const renderRow = useCallback(
+    ({ item }: { item: Settlement }) => (
+      <SettlementRow
+        settlement={item}
+        onPress={openDetail}
+        onInstantSettle={setInstantTarget}
+        isOnline={isOnline}
+      />
+    ),
+    [openDetail, isOnline],
+  );
 
   return (
     <Screen padded={false} testID="settlements-list-screen">
@@ -232,47 +165,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   t1NoteText: { ...typography.caption, color: colors.info, flex: 1 },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-  },
-  cardPressed: { backgroundColor: colors.surfaceAlt },
-  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
-  cardHeaderText: { flex: 1 },
-  dateLabel: { ...typography.bodyMedium, color: colors.text },
-  batchLabel: { ...typography.caption, color: colors.textTertiary, marginTop: 2 },
-  amountRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: spacing.sm, gap: spacing.xs },
-  amountBlock: { flex: 1 },
-  amountCaption: { ...typography.caption, color: colors.textSecondary },
-  utrRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xxs,
-    marginTop: spacing.xs,
-    paddingTop: spacing.xs,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  utrText: { ...typography.caption, color: colors.textTertiary, flex: 1, fontVariant: ['tabular-nums'] },
-  instantButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xxs,
-    minHeight: MIN_TOUCH_TARGET - 8,
-    marginTop: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  instantButtonPressed: { opacity: 0.75 },
-  instantButtonDisabled: { borderColor: colors.border, backgroundColor: colors.surfaceAlt },
-  instantLabel: { ...typography.smallMedium, color: colors.primary },
-  instantLabelDisabled: { color: colors.disabled },
   offlineFooter: {
     flexDirection: 'row',
     alignItems: 'center',
