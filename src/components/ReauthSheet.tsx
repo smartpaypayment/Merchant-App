@@ -14,6 +14,7 @@ import {
   verifyPin,
   type BiometricCapability,
 } from '@store/appLock';
+import { useSensitiveScreen } from '@hooks/useSensitiveScreen';
 import { GhostButton } from './Button';
 import { PinPad } from './PinPad';
 
@@ -44,6 +45,9 @@ type Phase = 'checking' | 'biometric' | 'pin' | 'setup_pin' | 'confirm_pin';
  */
 export function ReauthSheet({ visible, reason, onSuccess, onCancel }: ReauthSheetProps) {
   const { t } = useTranslation();
+
+  // A PIN pad is on screen while this is open (Section 12).
+  useSensitiveScreen(visible);
 
   const [phase, setPhase] = useState<Phase>('checking');
   const [pin, setPinValue] = useState('');

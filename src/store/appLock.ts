@@ -21,13 +21,30 @@ import { secureStorage, SecureKeys } from './secureStorage';
  * the hash exists so the PIN is not sitting in cleartext and is not readable from
  * a backup or a memory dump of the storage layer.
  *
- * A production build should either
- *   (a) derive with a stretched KDF (scrypt/Argon2, ~100ms target), or
- *   (b) stop verifying locally altogether and make the PIN unwrap a
- *       StrongBox-backed key with hardware-enforced attempt throttling.
+ * ## Why there is no JS-side key stretching
  *
- * Attempt throttling is implemented below regardless, because unlimited local
- * guesses would make the keyspace argument moot for anyone holding the phone.
+ * The obvious hardening is to iterate the digest. It was considered and rejected,
+ * because the arithmetic does not support it. `expo-crypto` exposes no KDF, only
+ * `digestStringAsync`, so N iterations means N round-trips across the native
+ * bridge. At a defensible cost for the Section 2 target device (a 2GB Android
+ * phone) you can afford perhaps a few hundred iterations — call it 1000. Against a
+ * 4-digit PIN that raises an offline attack from 10^4 hashes to 10^7: still well
+ * under a second on a laptop. To reach a genuinely painful cost you need ~10^5
+ * iterations, which on this transport would put a visible multi-second stall in
+ * front of every refund confirmation.
+ *
+ * So iterating here would buy latency on the slowest devices in exchange for
+ * security that rounds to zero. It would also read as solved to the next person
+ * looking at this file, which is worse than leaving the gap legible. The real
+ * fixes, both of which need work outside this module:
+ *   (a) a native KDF (`react-native-quick-crypto` or similar) to make scrypt or
+ *       Argon2 at a ~100ms target actually reachable, or
+ *   (b) stop verifying locally altogether — have the PIN unwrap a StrongBox-backed
+ *       key and let the hardware enforce the attempt throttling.
+ *
+ * What *is* implemented below is the defence that pays for itself against the
+ * realistic threat here — someone holding the unlocked phone and typing guesses
+ * into our own UI: a persisted, escalating cooldown.
  */
 
 const PIN_MIN_LENGTH = 4;
@@ -105,27 +122,138 @@ async function readPin(): Promise<StoredPin | null> {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Held in memory rather than on disk, deliberately: this counter guards a live
- * session, and persisting it would let a merchant who genuinely forgot their PIN
- * be locked out permanently with no reset path. Killing the app clears it, which
- * is an accepted trade-off — the threat model here is a shoulder-surfer at the
- * counter, not a forensic attacker, who is instead handled by the keystore.
+ * Escalating cooldown, applied each time the attempt limit is exhausted.
+ *
+ * The first lockout is deliberately short: by far the most common cause of five
+ * wrong PINs is a merchant fat-fingering a number pad one-handed at a busy
+ * counter, not an attacker. Repeat exhaustion is what looks like guessing, so the
+ * penalty climbs and then caps — an unbounded ladder would turn a forgotten PIN
+ * into a bricked app with no way back.
  */
-let failedAttempts = 0;
+const LOCKOUT_LADDER_MS = [30_000, 2 * 60_000, 10 * 60_000, 30 * 60_000] as const;
 
-export const getRemainingAttempts = (): number => Math.max(0, MAX_PIN_ATTEMPTS - failedAttempts);
-export const isLockedOut = (): boolean => failedAttempts >= MAX_PIN_ATTEMPTS;
+interface PinAttemptState {
+  failedAttempts: number;
+  /** How many times the limit has been exhausted; indexes the ladder. */
+  lockoutCount: number;
+  /** Epoch ms until which entry is refused, or null. */
+  lockedUntil: number | null;
+}
+
+const FRESH_ATTEMPTS: PinAttemptState = {
+  failedAttempts: 0,
+  lockoutCount: 0,
+  lockedUntil: null,
+};
+
+/**
+ * In-memory mirror of the persisted counter.
+ *
+ * Persisted, unlike the original implementation, because an in-memory counter is
+ * defeated by force-quitting the app — which is a two-second action for anyone
+ * holding the phone, and made the limit decorative against exactly the threat it
+ * exists to stop. The objection to persisting it (a merchant who forgets their PIN
+ * being locked out forever) is answered by the cooldown expiring on its own rather
+ * than by the counter being volatile.
+ */
+let attemptState: PinAttemptState = { ...FRESH_ATTEMPTS };
+let hydration: Promise<void> | null = null;
+
+async function hydrateAttempts(): Promise<void> {
+  if (!hydration) {
+    hydration = (async () => {
+      const raw = await secureStorage.getItem(SecureKeys.pinAttempts);
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw) as Partial<PinAttemptState>;
+        attemptState = {
+          failedAttempts: Number(parsed.failedAttempts) || 0,
+          lockoutCount: Number(parsed.lockoutCount) || 0,
+          lockedUntil: typeof parsed.lockedUntil === 'number' ? parsed.lockedUntil : null,
+        };
+      } catch {
+        /* Corrupt record — fall back to a clean slate rather than refusing entry. */
+      }
+    })();
+  }
+  return hydration;
+}
+
+async function persistAttempts(): Promise<void> {
+  await secureStorage.setItem(SecureKeys.pinAttempts, JSON.stringify(attemptState));
+}
+
+/**
+ * Clears an elapsed cooldown.
+ *
+ * Expiring the lockout also hands back a fresh set of attempts, while leaving
+ * `lockoutCount` intact so the *next* lockout is longer.
+ */
+function expireLockoutIfElapsed(): void {
+  if (attemptState.lockedUntil !== null && Date.now() >= attemptState.lockedUntil) {
+    attemptState = { ...attemptState, failedAttempts: 0, lockedUntil: null };
+  }
+}
+
+export const getRemainingAttempts = (): number => {
+  expireLockoutIfElapsed();
+  return Math.max(0, MAX_PIN_ATTEMPTS - attemptState.failedAttempts);
+};
+
+export const isLockedOut = (): boolean => {
+  expireLockoutIfElapsed();
+  return attemptState.lockedUntil !== null;
+};
+
+/** Milliseconds until entry is allowed again, or 0 when not locked out. */
+export const getLockoutRemainingMs = (): number => {
+  expireLockoutIfElapsed();
+  if (attemptState.lockedUntil === null) return 0;
+  return Math.max(0, attemptState.lockedUntil - Date.now());
+};
+
+/** Hydrates from storage, then reports the lock state. Use before rendering a PIN pad. */
+export async function loadLockState(): Promise<{
+  isLockedOut: boolean;
+  remainingAttempts: number;
+  lockoutRemainingMs: number;
+}> {
+  await hydrateAttempts();
+  return {
+    isLockedOut: isLockedOut(),
+    remainingAttempts: getRemainingAttempts(),
+    lockoutRemainingMs: getLockoutRemainingMs(),
+  };
+}
 
 async function resetAttempts(): Promise<void> {
-  failedAttempts = 0;
+  attemptState = { ...FRESH_ATTEMPTS };
+  // Ensure a later hydrate cannot resurrect the cleared counter.
+  hydration = Promise.resolve();
+  await secureStorage.deleteItem(SecureKeys.pinAttempts);
 }
 
 export type PinVerifyResult =
   | { ok: true }
-  | { ok: false; reason: 'no_pin' | 'incorrect' | 'locked_out'; remainingAttempts: number };
+  | {
+      ok: false;
+      reason: 'no_pin' | 'incorrect' | 'locked_out';
+      remainingAttempts: number;
+      /** Set when `reason === 'locked_out'`, so the UI can count down. */
+      lockoutRemainingMs?: number;
+    };
 
 export async function verifyPin(pin: string): Promise<PinVerifyResult> {
-  if (isLockedOut()) return { ok: false, reason: 'locked_out', remainingAttempts: 0 };
+  await hydrateAttempts();
+
+  if (isLockedOut()) {
+    return {
+      ok: false,
+      reason: 'locked_out',
+      remainingAttempts: 0,
+      lockoutRemainingMs: getLockoutRemainingMs(),
+    };
+  }
 
   const record = await readPin();
   if (!record) return { ok: false, reason: 'no_pin', remainingAttempts: getRemainingAttempts() };
@@ -141,14 +269,34 @@ export async function verifyPin(pin: string): Promise<PinVerifyResult> {
   }
 
   if (mismatch !== 0) {
-    failedAttempts += 1;
-    return {
-      ok: false,
-      reason: isLockedOut() ? 'locked_out' : 'incorrect',
-      remainingAttempts: getRemainingAttempts(),
-    };
+    const failedAttempts = attemptState.failedAttempts + 1;
+
+    if (failedAttempts >= MAX_PIN_ATTEMPTS) {
+      const ladderIndex = Math.min(attemptState.lockoutCount, LOCKOUT_LADDER_MS.length - 1);
+      const cooldown = LOCKOUT_LADDER_MS[ladderIndex]!;
+
+      attemptState = {
+        failedAttempts,
+        lockoutCount: attemptState.lockoutCount + 1,
+        lockedUntil: Date.now() + cooldown,
+      };
+      await persistAttempts();
+
+      return {
+        ok: false,
+        reason: 'locked_out',
+        remainingAttempts: 0,
+        lockoutRemainingMs: cooldown,
+      };
+    }
+
+    attemptState = { ...attemptState, failedAttempts };
+    await persistAttempts();
+
+    return { ok: false, reason: 'incorrect', remainingAttempts: getRemainingAttempts() };
   }
 
+  // A correct entry clears the ladder too — the merchant has proved it is them.
   await resetAttempts();
   return { ok: true };
 }

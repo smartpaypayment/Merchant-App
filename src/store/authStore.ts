@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import type { Merchant } from '@models/index';
 import { merchantApi } from '@api/index';
 import { ApiError } from '@api/errors';
+import { queryClient } from '@app/providers/queryClient';
+import { purgePersistedQueryCache } from '@app/providers/queryPersister';
+import { clearKycDraft } from './kycDraftStorage';
 import { clearTokens, getAccessToken, saveTokens, type TokenPair } from './secureStorage';
 import { storage, StorageKeys } from './storage';
 
@@ -119,10 +122,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     void storage.setObject(StorageKeys.merchantCache, merchant);
   },
 
+  /**
+   * Ends the session and removes every trace of the merchant's data from the
+   * device.
+   *
+   * Section 12. The React Query purge is the part that was missing and it matters
+   * on a shared counter phone: `queryClient.clear()` drops the in-memory cache,
+   * and `purgePersistedQueryCache()` deletes the AsyncStorage copy that would
+   * otherwise be restored on the next launch — for whoever logs in next.
+   *
+   * The app PIN (`security.appPin`) is deliberately *not* cleared: it belongs to
+   * the device owner, not the session, and wiping it on every logout would mean
+   * re-enrolling a PIN after each sign-in.
+   */
   logout: async () => {
     await clearTokens();
+
+    // In-memory first, then disk — see `purgePersistedQueryCache` for why the
+    // order is not interchangeable.
+    queryClient.clear();
+    await purgePersistedQueryCache();
+
     await storage.remove(StorageKeys.merchantCache);
-    await storage.remove(StorageKeys.kycDraft);
+    // Clears both halves of the split draft, including the Keystore record.
+    await clearKycDraft();
     set({ status: 'unauthenticated', merchant: null, pendingMobile: null, isStaleProfile: false });
   },
 }));

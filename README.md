@@ -17,7 +17,7 @@ Runs **end-to-end against an in-memory mock backend**, so no live API is require
 | 7 | Settlements list + detail | ✅ Complete |
 | 8 | Reports | ✅ Complete |
 | 9 | Profile, settings, staff, support, notifications | ✅ Complete |
-| 10 | Offline handling, security hardening, tests | 🟡 Foundations in place |
+| 10 | Offline handling, security hardening, tests | ✅ Complete |
 
 Every screen in the Section 4 navigation map is now implemented — there are no
 placeholder screens left, and the "Soon" badges are gone from the More menu.
@@ -34,7 +34,7 @@ Verification:
 
 ```bash
 npm run typecheck     # tsc --noEmit, strict
-npm test              # 285 tests
+npm test              # 338 tests
 npm run bundle:check  # production Android bundle
 ```
 
@@ -75,6 +75,94 @@ compile error rather than a runtime fallback. All 8 bundles are at key parity.
 
 **Offline.** React Query's cache is persisted to AsyncStorage. The dashboard treats
 "offline with cached data" as a success state with a banner, not an error.
+
+**React Query had to be taught what "online" means.** Its default detection reads
+`navigator.onLine`, which does not exist on React Native, so the library believed it
+was permanently online: `refetchOnReconnect` never fired and retries burned their
+backoff against a dead radio. `queryLifecycle.ts` bridges `onlineManager` to NetInfo
+through the same subscription the offline banner uses, so the two cannot disagree.
+
+That fix required `networkMode: 'offlineFirst'` to land safely. Under the default
+`'online'` mode a correctly-wired `onlineManager` parks an offline query in
+`fetchStatus: 'paused'`, which reads as `isLoading === false`, `isError === false`,
+`data === undefined` — and every list screen here renders that as **empty**. An
+offline merchant with a cold cache would have been told "No settlements yet" instead
+of "you are offline": a worse bug than the one being fixed. `'offlineFirst'` lets the
+first attempt run, so a real failure still surfaces as `network_error`, while retries
+wait for connectivity. Mutations use the same mode for a different reason: under
+`'online'` an offline write is paused indefinitely, which is an implicit write queue,
+and a deferred "remove this staff member" landing hours later is a security problem.
+
+**Logout deletes both query caches.** `queryClient.clear()` was previously wired only
+to the 401 path, so tapping "Log out" in Settings left transactions, settlements,
+dashboard figures and the profile in memory *and* on disk under `cache.reactQuery`,
+where the next launch would restore them — for whoever signed in next. On a shared
+counter phone that is a real disclosure. `logout()` now owns the whole teardown so
+the two paths cannot drift, and `sessionPurge.test.ts` guards it.
+
+**The KYC draft is split by sensitivity, not redacted.** The draft is saved after
+every step so a merchant on flaky 2G resumes without retyping — but it was writing
+the PAN and the full bank account number to plain AsyncStorage, while its own comment
+claimed only non-sensitive data was kept. Dropping those two fields would have been
+the one-line fix and would have defeated the point, since they are the longest and
+most error-prone values on the form. Instead `kycDraftStorage.ts` splits at the
+storage boundary: progress, IFSC, holder name and GSTIN stay in AsyncStorage, the two
+secrets go to the Keystore, and load reassembles them. The Aadhaar number is still
+never persisted at all.
+
+**App lock is enforced, with a deliberately generous grace period.** Section 12's
+"PIN + biometric" was half-built: `ReauthSheet` gated refunds and bank changes, but
+nothing locked the app, so a valid token put whoever picked the phone up straight on
+Home. `lockManager.ts` locks on cold start always, and on return from background only
+after five minutes. That window is the difference between a feature merchants keep
+and one they switch off — a shop owner flips to their UPI app or the camera dozens of
+times an hour. The last-active time is held in memory only: persisting it would add a
+tamper surface for no gain, since cold start locks unconditionally. `LockScreen`
+replaces the authenticated tree rather than covering it, so the day's takings are not
+sitting rendered behind a sheet, and it always offers "Forgot your PIN?" → log out,
+because a forgotten PIN must not brick access to a merchant's money.
+
+**The PIN cooldown is persisted; the PIN hash is deliberately not stretched.** The
+attempt counter used to be a module-level variable, so force-quitting reset it — a
+two-second action that made the five-attempt limit decorative against exactly the
+threat it exists to stop. It is now in secure storage with an escalating cooldown
+(30s → 2min → 10min → 30min, capped) that expires on its own, which also removes the
+original objection to persisting it. Key stretching was considered and rejected on
+the arithmetic: `expo-crypto` exposes no KDF, so iterations mean native bridge
+round-trips, and the few hundred affordable on a 2GB phone take a 4-digit brute force
+from 10⁴ to 10⁷ hashes — still under a second for an attacker, in exchange for a
+visible stall before every refund. Full reasoning is in `appLock.ts`; the real fixes
+are a native KDF or having the PIN unwrap a StrongBox key.
+
+**Screen-capture blocking is scoped, not blanket.** `FLAG_SECURE` via
+`expo-screen-capture` covers the PIN pad, the KYC identity/bank steps and the profile
+bank form — which on Android also keeps them out of the app-switcher thumbnail. It is
+deliberately **not** applied to the QR screens: merchants legitimately screenshot
+their static QR to print it or send it over WhatsApp, and blocking that would break a
+real workflow to protect a payment address that is meant to be public. The hook is
+reference counted, because `preventScreenCaptureAsync` is a single global switch and
+a `ReauthSheet` closing over a protected form would otherwise silently unprotect it.
+
+**`sensitive` on `TextField`, not `secureTextEntry`.** PAN, Aadhaar and account-number
+fields turn off autofill, autocomplete, autocorrect and the spell-check dictionary,
+which on some Android keyboards learns typed strings and resurfaces them in other
+apps. They stay visible on purpose: a merchant needs to check an 18-digit account
+number against their passbook, and masking it just pushes people to type it into a
+notes app first. Shoulder-surfing is handled where it actually matters — the PIN pad,
+which renders dots and never numerals.
+
+## Release checklist
+
+Known items deliberately deferred, each documented at its call site:
+
+| Item | Where |
+|---|---|
+| Replace the placeholder grievance contacts and clear the flag | `src/features/support/supportContacts.ts` |
+| Flip `extra.useMockApi` to `false` | `app.json` |
+| Certificate pinning (needs `prebuild`; would break the Expo Go workflow) | — |
+| Native KDF for the app PIN, or a StrongBox-backed key | `src/store/appLock.ts` |
+| Server-rendered signed-URL PDF statements | `shareStatement` / `shareReport` |
+| UTC day-key attribution for reports (backend) | `src/features/reports/` |
 
 **Security.** Tokens live in `expo-secure-store` (Keystore/Keychain); the Aadhaar
 number is held in component state only and never written to the KYC draft.

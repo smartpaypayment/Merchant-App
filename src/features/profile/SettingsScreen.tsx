@@ -9,6 +9,7 @@ import { colors, radius, spacing, typography, MIN_TOUCH_TARGET } from '@theme/in
 import { LanguageSelector, ReauthSheet, Screen, SecondaryButton } from '@components/index';
 import { merchantApi } from '@api/index';
 import { useAuthStore } from '@store/authStore';
+import { useLockManager } from '@store/lockManager';
 import { clearPin, getBiometricCapability, hasPin, type BiometricCapability } from '@store/appLock';
 // The language itself is persisted by `LanguageSelector` (which calls `setLanguage`
 // before invoking `onChanged`); this screen only mirrors the choice to the server.
@@ -54,11 +55,17 @@ export function SettingsScreen() {
   const [reauthVisible, setReauthVisible] = useState(false);
   const [saveError, setSaveError] = useState(false);
 
+  const lockEnabled = useLockManager((s) => s.isEnabled);
+  const setLockEnabled = useLockManager((s) => s.setEnabled);
+  const refreshLock = useLockManager((s) => s.refresh);
+
   const refreshSecurityState = useCallback(async () => {
     const [capability, exists] = await Promise.all([getBiometricCapability(), hasPin()]);
     setBiometric(capability);
     setPinExists(exists);
-  }, []);
+    // Creating or clearing a PIN changes whether the app lock can apply at all.
+    await refreshLock();
+  }, [refreshLock]);
 
   useEffect(() => {
     void refreshSecurityState();
@@ -248,6 +255,21 @@ export function SettingsScreen() {
             </Text>
           </Pressable>
         </View>
+
+        {/*
+          Only offered once a PIN exists — there would be nothing to unlock with
+          otherwise, and a toggle that silently does nothing is worse than none.
+        */}
+        {pinExists ? (
+          <ToggleRow
+            label={t('appLock.requireLabel')}
+            body={t('appLock.requireBody')}
+            value={lockEnabled}
+            onValueChange={(enabled) => void setLockEnabled(enabled)}
+            bordered
+            testID="settings-app-lock-toggle"
+          />
+        ) : null}
 
         <View style={[styles.row, styles.rowBordered]}>
           <View style={styles.rowText}>

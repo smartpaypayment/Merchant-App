@@ -18,6 +18,11 @@ export const StorageKeys = {
   audioPrefs: 'pref.audio',
   queryCache: 'cache.reactQuery',
   pendingMobile: 'auth.pendingMobile',
+  /**
+   * Whether the app asks for the PIN on open. Only a preference — the PIN itself
+   * and the failed-attempt counter live in secure storage.
+   */
+  appLockEnabled: 'pref.appLock',
 } as const;
 
 export type StorageKey = (typeof StorageKeys)[keyof typeof StorageKeys];

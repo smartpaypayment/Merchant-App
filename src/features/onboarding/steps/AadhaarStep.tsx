@@ -13,6 +13,7 @@ import { digitsOnly, OTP_LENGTH } from '@utils/validators';
 import { useCountdown } from '@hooks/useCountdown';
 import type { AadhaarEkycStepData } from '@models/kyc';
 import { aadhaarSchema, type AadhaarFormValues } from '../schemas';
+import { useSensitiveScreen } from '@hooks/useSensitiveScreen';
 
 export interface AadhaarStepProps {
   onSubmit: (data: AadhaarEkycStepData) => void;
@@ -34,6 +35,9 @@ export interface AadhaarStepProps {
  * four digits are persisted (Section 12).
  */
 export function AadhaarStep({ onSubmit, onSkip, isSubmitting }: AadhaarStepProps) {
+  // Aadhaar number on screen (Section 12).
+  useSensitiveScreen();
+
   const { t } = useTranslation();
   const [phase, setPhase] = useState<'enter' | 'otp'>('enter');
   const [transactionId, setTransactionId] = useState<string | null>(null);
@@ -112,6 +116,7 @@ export function AadhaarStep({ onSubmit, onSkip, isSubmitting }: AadhaarStepProps
                 inputMode="numeric"
                 maxLength={12}
                 editable={!busy}
+                sensitive
                 testID="kyc-aadhaar-number"
               />
             )}

@@ -20,6 +20,7 @@ import { merchantApi } from '@api/index';
 import { ApiError } from '@api/errors';
 import { useAuthStore } from '@store/authStore';
 import { useNetworkStatus } from '@hooks/useNetworkStatus';
+import { useSensitiveScreen } from '@hooks/useSensitiveScreen';
 import { digitsOnly, formatMobileForDisplay, isValidIfsc, toUpperAlnum } from '@utils/validators';
 import { MCC_OPTIONS } from '@features/onboarding/mccOptions';
 import { ScreenHeader } from '@features/collect/ScreenHeader';
@@ -451,6 +452,10 @@ function BankForm({
 }) {
   const { t } = useTranslation();
 
+  // Only mounted in `editBank` mode, so the guard applies exactly while a full
+  // account number is on screen (Section 12).
+  useSensitiveScreen();
+
   // Same schema as KYC step 3, including the re-entry confirmation: a mistyped
   // account number here would send every future settlement to a stranger.
   const { control, handleSubmit, formState } = useForm<BankAccountFormValues>({
@@ -480,6 +485,7 @@ function BankForm({
             keyboardType="number-pad"
             maxLength={18}
             editable={!isSubmitting}
+            sensitive
             testID="profile-bank-account"
           />
         )}
@@ -499,6 +505,7 @@ function BankForm({
             maxLength={18}
             contextMenuHidden
             editable={!isSubmitting}
+            sensitive
             testID="profile-bank-account-confirm"
           />
         )}

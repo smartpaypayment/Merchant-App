@@ -20,6 +20,18 @@ export const SecureKeys = {
   accessToken: 'auth.accessToken',
   refreshToken: 'auth.refreshToken',
   appPin: 'security.appPin',
+  /**
+   * The PAN and full bank account number from the in-progress KYC draft. These
+   * used to sit in plain AsyncStorage alongside the rest of the wizard state; see
+   * `kycDraftStorage.ts` for why they were moved here.
+   */
+  kycSensitive: 'kyc.sensitive',
+  /**
+   * Failed-PIN counter and cooldown deadline. In secure storage rather than
+   * AsyncStorage specifically so it cannot be reset by clearing app data without
+   * also destroying the PIN record itself.
+   */
+  pinAttempts: 'security.pinAttempts',
 } as const;
 
 export type SecureKey = (typeof SecureKeys)[keyof typeof SecureKeys];

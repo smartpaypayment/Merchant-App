@@ -5,8 +5,9 @@ import axios, {
 } from 'axios';
 import { env } from '@/config/env';
 import { clearTokens, getAccessToken, getRefreshToken, saveTokens } from '@/store/secureStorage';
+import { getNetworkStatus } from '@hooks/useNetworkStatus';
 import type { RefreshResponse } from '@models/api';
-import { ApiError, normalizeError } from './errors';
+import { apiError, ApiError, normalizeError } from './errors';
 import { mockAdapter } from './mocks/mockAdapter';
 
 /**
@@ -65,8 +66,31 @@ export const apiClient: AxiosInstance = axios.create({
 
 /* ------------------------------ Request ----------------------------------- */
 
+/**
+ * Fails a request immediately when the device is known to be offline.
+ *
+ * Without this, an offline request waits out the full 15s timeout before
+ * surfacing a generic `timeout` — on 2G that is 15 seconds of spinner for
+ * something the OS already knew was impossible. It also produces the precise
+ * `offline` code, which `ErrorState` renders with its own copy ("You are offline.
+ * Connect to the internet and try again.") instead of the vaguer network message.
+ *
+ * Skipped in mock mode on purpose. The mock adapter never touches the network, and
+ * this project's whole premise is that it runs end to end without a backend — so
+ * blocking mock reads because the *device* has no signal would break the demo for
+ * no security or correctness benefit. Offline UI still behaves correctly in mock
+ * mode, because the banner and the disabled write buttons read NetInfo directly
+ * rather than going through the transport.
+ */
+function assertOnline(): void {
+  if (env.useMockApi) return;
+  if (!getNetworkStatus().isOnline) throw apiError('offline');
+}
+
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
+    assertOnline();
+
     if (!isAuthFree(config.url)) {
       const token = await getAccessToken();
       if (token) config.headers.set('Authorization', `Bearer ${token}`);

@@ -25,6 +25,23 @@ export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
   containerStyle?: StyleProp<ViewStyle>;
   /** Shows a trailing spinner/tick, used by the penny-drop + pincode lookups. */
   status?: 'idle' | 'validating' | 'valid';
+  /**
+   * Marks the field as holding an identity or banking secret — PAN, Aadhaar, a
+   * bank account number (Section 12).
+   *
+   * Turns off the conveniences that would otherwise copy the value somewhere the
+   * app does not control: autofill and autocomplete (which persist entries into an
+   * OS-level suggestion store), plus autocorrect and the spell-check dictionary,
+   * which on some Android keyboards learns typed strings and can surface them as
+   * suggestions in *other* apps.
+   *
+   * Note this is not `secureTextEntry`: these fields must stay readable so the
+   * merchant can check a long account number against their passbook before
+   * submitting, and masking them would push people to type it into a notes app
+   * first. Shoulder-surfing is handled where it actually matters — the PIN pad,
+   * which renders dots and never numerals.
+   */
+  sensitive?: boolean;
 }
 
 /**
@@ -44,6 +61,7 @@ export const TextField = forwardRef<TextInput, TextFieldProps>(function TextFiel
     optionalLabel,
     containerStyle,
     status = 'idle',
+    sensitive = false,
     ...inputProps
   },
   ref,
@@ -74,6 +92,17 @@ export const TextField = forwardRef<TextInput, TextFieldProps>(function TextFiel
           selectionColor={colors.primary}
           accessibilityLabel={label}
           {...(hasError ? { 'aria-invalid': true } : {})}
+          {...(sensitive
+            ? {
+                autoComplete: 'off' as const,
+                autoCorrect: false,
+                spellCheck: false,
+                // Android: keeps the value out of the OS autofill store.
+                importantForAutofill: 'no' as const,
+                // iOS: prevents the keyboard offering it as a saved value.
+                textContentType: 'none' as const,
+              }
+            : {})}
           onFocus={(e) => {
             setFocused(true);
             inputProps.onFocus?.(e);

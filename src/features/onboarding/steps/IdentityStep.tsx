@@ -8,6 +8,7 @@ import { PrimaryButton, TextField } from '@components/index';
 import { isValidPan, toUpperAlnum } from '@utils/validators';
 import type { IdentityStepData } from '@models/kyc';
 import { identitySchema, type IdentityFormValues } from '../schemas';
+import { useSensitiveScreen } from '@hooks/useSensitiveScreen';
 
 export interface IdentityStepProps {
   initial?: IdentityStepData | undefined;
@@ -24,6 +25,9 @@ export interface IdentityStepProps {
  * uppercase, and rejecting "abcde1234f" as invalid would be indefensible.
  */
 export function IdentityStep({ initial, onSubmit, isSubmitting }: IdentityStepProps) {
+  // PAN on screen (Section 12).
+  useSensitiveScreen();
+
   const { t } = useTranslation();
 
   const { control, handleSubmit, formState, watch } = useForm<IdentityFormValues>({
@@ -70,6 +74,7 @@ export function IdentityStep({ initial, onSubmit, isSubmitting }: IdentityStepPr
             maxLength={10}
             editable={!isSubmitting}
             status={isValidPan(value) ? 'valid' : 'idle'}
+            sensitive
             testID="kyc-identity-pan"
           />
         )}

@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { NavigationContainer, type LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useQueryClient } from '@tanstack/react-query';
 import { colors } from '@theme/index';
 import { setUnauthorizedHandler } from '@api/index';
 import { needsOnboarding, useAuthStore } from '@store/authStore';
+import { useLockManager } from '@store/lockManager';
+import { LockScreen } from '@features/auth/LockScreen';
 import { SplashScreen } from '@features/auth/SplashScreen';
 import { NotificationsScreen } from '@features/notifications/NotificationsScreen';
 import { AuthNavigator } from './AuthNavigator';
@@ -46,24 +47,47 @@ export function RootNavigator() {
   const merchant = useAuthStore((s) => s.merchant);
   const bootstrap = useAuthStore((s) => s.bootstrap);
   const logout = useAuthStore((s) => s.logout);
-  const queryClient = useQueryClient();
+
+  const isLockReady = useLockManager((s) => s.isReady);
+  const isLocked = useLockManager((s) => s.isLocked);
+  const initLock = useLockManager((s) => s.init);
 
   // Section 6.1: read secure storage and decide the initial route.
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
 
+  // Section 12: decide whether the app opens locked, and start watching AppState.
+  useEffect(() => {
+    void initLock();
+  }, [initLock]);
+
   // Section 9: a failed refresh must end the session. Wiring it here (rather than
   // inside the API layer) keeps `client.ts` free of store imports.
+  //
+  // `logout()` now owns the full teardown, including both query caches, so this
+  // path and the merchant-initiated one in Settings cannot drift apart.
   useEffect(() => {
     setUnauthorizedHandler(() => {
       void logout();
-      queryClient.clear();
     });
     return () => setUnauthorizedHandler(null);
-  }, [logout, queryClient]);
+  }, [logout]);
 
-  if (status === 'bootstrapping') return <SplashScreen />;
+  // Both decisions must resolve before the first paint. Waiting on the lock check
+  // too is what prevents a flash of Home behind the lock screen on cold start.
+  if (status === 'bootstrapping' || !isLockReady) return <SplashScreen />;
+
+  /*
+   * The lock replaces the authenticated tree rather than covering it. Rendering it
+   * as a sibling screen or a modal would leave Home mounted underneath, so the
+   * day's takings would still be readable behind the sheet and would still be
+   * captured in the app-switcher thumbnail.
+   *
+   * It is gated on `authenticated`: there is nothing to protect on the Login
+   * screen, and locking an unauthenticated app would be a dead end.
+   */
+  if (status === 'authenticated' && isLocked) return <LockScreen />;
 
   const showOnboarding = status === 'authenticated' && needsOnboarding(merchant);
   const showMain = status === 'authenticated' && !showOnboarding;
